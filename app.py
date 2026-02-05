@@ -1,270 +1,222 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
 import plotly.express as px
-from datetime import datetime, timedelta
+import plotly.graph_objects as go
+import requests
+from datetime import datetime
 
-# --- 1. CẤU HÌNH HỆ THỐNG PRO ---
+# --- 1. CẤU HÌNH HỆ THỐNG ---
 st.set_page_config(
-    page_title="EcoMind Enterprise - Smart Plant AI",
-    page_icon="🧬",
+    page_title="EcoMind Ultimate - Location Based",
+    page_icon="🌍",
     layout="wide",
-    initial_sidebar_state="collapsed" # Thu gọn sidebar ban đầu cho thoáng
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS cho giao diện Dark/Glassmorphism chuyên nghiệp
+# CSS Tối giản & Hiện đại
 st.markdown("""
 <style>
-    .big-font { font-size:20px !important; font-weight: bold; }
-    .stMetric { background-color: #1E1E1E; border-radius: 10px; padding: 10px; border: 1px solid #333; }
-    .css-1aumxhk { background-color: #0E1117; }
+    .stMetric { background-color: #f0f2f6; border-radius: 10px; padding: 10px; border-left: 5px solid #00CC96; }
     div[data-testid="stExpander"] div[role="button"] p { font-size: 1.1rem; font-weight: bold; }
+    .css-1d391kg { padding-top: 1rem; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. KHỞI TẠO "BIG DATA" (CƠ SỞ DỮ LIỆU CÂY TRỒNG) ---
-# Chúng ta tạo một DataFrame lớn để mô phỏng dữ liệu phong phú
-def load_data():
-    data = {
-        "Tên thường gọi": ["Xương rồng Saguaro", "Cây Lưỡi Hổ", "Trầu bà Nam Mỹ", "Lan Ý", "Cây Bàng Singapore", "Dương xỉ Mỹ", "Cây Kim Tiền", "Cây Đa Búp Đỏ", "Cây Dây Nhện", "Sen đá Nâu", "Cây Hạnh Phúc", "Cây Ngọc Ngân"],
-        "Tên khoa học": ["Carnegiea gigantea", "Sansevieria trifasciata", "Monstera deliciosa", "Spathiphyllum", "Ficus lyrata", "Nephrolepis exaltata", "Zamioculcas zamiifolia", "Ficus elastica", "Chlorophytum comosum", "Echeveria", "Radermachera sinica", "Aglaonema"],
-        "Loại": ["Sa mạc", "Trong nhà", "Nhiệt đới", "Trong nhà", "Thân gỗ", "Ưa ẩm", "Phong thủy", "Thân gỗ", "Treo", "Sa mạc", "Thân gỗ", "Lá màu"],
-        "Nhu cầu nước (L/ngày)": [0.05, 0.1, 0.8, 0.4, 0.9, 0.7, 0.2, 0.6, 0.3, 0.08, 0.65, 0.35],
-        "Chịu hạn (Ngày)": [60, 45, 7, 5, 6, 3, 30, 10, 12, 40, 8, 10],
-        "An toàn cho Pet": [False, False, False, False, False, True, False, False, True, True, True, False],
-        "Ánh sáng": ["Trực tiếp", "Bóng râm/Vừa", "Tán xạ", "Bóng râm", "Tán xạ mạnh", "Bóng râm", "Vừa", "Tán xạ", "Tán xạ", "Trực tiếp", "Tán xạ", "Vừa"],
-        "Icon": ["🌵", "🎍", "🌿", "💐", "🌳", "🍃", "💰", "🍂", "🕷️", "🪷", "🌲", "🌱"]
-    }
-    return pd.DataFrame(data)
+# --- 2. DỮ LIỆU CÂY TRỒNG (DATABASE) ---
+def load_plant_data():
+    return pd.DataFrame({
+        "Tên": ["Xương rồng", "Lưỡi Hổ", "Trầu bà", "Lan Ý", "Bàng Singapore", "Dương xỉ", "Sen đá", "Kim Tiền"],
+        "Nước (L/ngày)": [0.05, 0.1, 0.6, 0.4, 0.9, 0.7, 0.08, 0.2],
+        "Chịu hạn (Ngày)": [60, 45, 7, 5, 6, 3, 40, 30],
+        "Nhiệt độ lý tưởng": [30, 28, 25, 24, 27, 22, 25, 26],
+        "Icon": ["🌵", "🎍", "🌿", "💐", "🌳", "🍃", "🪷", "💰"]
+    })
 
-df_plants = load_data()
+df_plants = load_plant_data()
 
-# --- 3. SESSION STATE MANAGEMENT ---
-# Đảm bảo ban đầu chưa chọn gì cả
-if 'selected_plant_index' not in st.session_state:
-    st.session_state.selected_plant_index = None # Chưa chọn cây nào
-if 'tank_level' not in st.session_state:
-    st.session_state.tank_level = 100.0
+# --- 3. DỮ LIỆU ĐỊA LÝ (GEOLOCATION DATABASE) ---
+# Tọa độ các thành phố lớn để gọi API
+CITIES = {
+    "Hồ Chí Minh": {"lat": 10.8231, "lon": 106.6297},
+    "Hà Nội": {"lat": 21.0285, "lon": 105.8542},
+    "Đà Nẵng": {"lat": 16.0544, "lon": 108.2022},
+    "Cần Thơ": {"lat": 10.0452, "lon": 105.7469},
+    "Hải Phòng": {"lat": 20.8449, "lon": 106.6881},
+    "Đà Lạt": {"lat": 11.9404, "lon": 108.4583},
+    "Nha Trang": {"lat": 12.2388, "lon": 109.1967},
+    "Sapa": {"lat": 22.3364, "lon": 103.8438}
+}
 
-# --- 4. LOGIC AI "VIP PRO" ---
-def calculate_analytics(plant_row, temp, humidity, tank_cap):
-    # Logic phức tạp hơn: Tính cả áp suất hơi bão hòa (VPD - Vapor Pressure Deficit) giả lập
-    base_consumption = plant_row["Nhu cầu nước (L/ngày)"]
-    
-    # Hệ số stress nhiệt (Heat Stress Factor)
-    heat_stress = 1.0
-    if temp > 30: heat_stress += (temp - 30) * 0.1
-    if temp > 38: heat_stress += (temp - 38) * 0.2 # Nắng gắt tốn nước gấp bội
-    
-    # Hệ số độ ẩm
-    humidity_factor = 1.0 + (50 - humidity) * 0.015 # Độ ẩm thấp thì tốn nước hơn
-    
-    real_consumption = base_consumption * heat_stress * humidity_factor
-    daily_loss_pct = (real_consumption / tank_cap) * 100
-    
-    days_left = st.session_state.tank_level / daily_loss_pct if daily_loss_pct > 0 else 999
-    
-    return real_consumption, daily_loss_pct, days_left
+# --- 4. HÀM GỌI API THỜI TIẾT (OPEN-METEO - MIỄN PHÍ) ---
+@st.cache_data(ttl=3600) # Cache dữ liệu 1 tiếng để web chạy nhanh
+def get_real_weather(lat, lon):
+    try:
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&hourly=relativehumidity_2m,rain"
+        response = requests.get(url)
+        data = response.json()
+        
+        current = data['current_weather']
+        # Lấy độ ẩm giờ hiện tại (API này trả về mảng theo giờ)
+        current_hour = datetime.now().hour
+        humidity = data['hourly']['relativehumidity_2m'][current_hour]
+        rain_chance = data['hourly']['rain'][current_hour]
+        
+        return {
+            "temp": current['temperature'],
+            "wind": current['windspeed'],
+            "humidity": humidity,
+            "rain": rain_chance,
+            "is_day": current['is_day']
+        }
+    except:
+        # Fallback nếu mất mạng
+        return {"temp": 30, "wind": 5, "humidity": 70, "rain": 0, "is_day": 1}
 
-# --- 5. GIAO DIỆN CHÍNH ---
+# --- 5. LOGIC DỰ BÁO ---
+def calculate_status(plant_row, weather_data, tank_cap, current_level):
+    temp = weather_data['temp']
+    hum = weather_data['humidity']
+    
+    # Công thức thoát hơi nước dựa trên dữ liệu thực
+    base_usage = plant_row["Nước (L/ngày)"]
+    evaporation_factor = 1.0 + ((temp - 25) * 0.05) - ((hum - 50) * 0.01)
+    
+    real_usage = base_usage * max(0.5, evaporation_factor)
+    daily_pct_loss = (real_usage / tank_cap) * 100
+    
+    days_left = current_level / daily_pct_loss if daily_pct_loss > 0 else 999
+    return real_usage, daily_pct_loss, days_left
 
-# HEADER
-col_h1, col_h2 = st.columns([1, 4])
-with col_h1:
-    st.title("🧬 EcoMind")
-with col_h2:
-    st.markdown("#### Hệ thống Quản trị Sinh thái Thực vật V3.0")
-    st.caption("AI-Powered Plant Monitoring System without Sensors")
+# --- 6. GIAO DIỆN ---
+st.title("🌍 EcoMind Geo-Spatial")
+st.caption("Dự báo thông minh dựa trên vị trí thực tế")
+
+# --- BƯỚC 1: CHỌN VỊ TRÍ (QUAN TRỌNG NHẤT) ---
+with st.container():
+    col_city, col_plant = st.columns([1, 1])
+    with col_city:
+        selected_city = st.selectbox("📍 Chọn vị trí của bạn:", list(CITIES.keys()))
+    with col_plant:
+        selected_plant_name = st.selectbox("🌱 Chọn loại cây:", df_plants["Tên"])
+
+# Xử lý dữ liệu
+coords = CITIES[selected_city]
+plant_info = df_plants[df_plants["Tên"] == selected_plant_name].iloc[0]
+
+# Gọi API Thời tiết
+with st.spinner(f"Đang kết nối vệ tinh lấy dữ liệu tại {selected_city}..."):
+    weather = get_real_weather(coords['lat'], coords['lon'])
+
+# --- BƯỚC 2: HIỂN THỊ THỜI TIẾT THỰC (ĐƠN GIẢN DỄ HIỂU) ---
+st.markdown("### 🌤️ Thời tiết hiện tại")
+w1, w2, w3, w4 = st.columns(4)
+with w1:
+    st.metric("Nhiệt độ", f"{weather['temp']}°C", "Thực tế ngoài trời")
+with w2:
+    st.metric("Độ ẩm", f"{weather['humidity']}%", "Ảnh hưởng tưới tiêu")
+with w3:
+    st.metric("Mưa", f"{weather['rain']} mm", "Lượng mưa giờ này")
+with w4:
+    day_status = "Ban ngày ☀️" if weather['is_day'] else "Ban đêm 🌙"
+    st.metric("Thời gian", day_status)
 
 st.markdown("---")
 
-# === TRƯỜNG HỢP 1: CHƯA CHỌN CÂY (HOME SCREEN) ===
-if st.session_state.selected_plant_index is None:
-    st.info("👋 Chào mừng! Vui lòng truy cập Cơ sở dữ liệu bên dưới để chọn loại cây bạn muốn giám sát.")
-    
-    # Bộ lọc tìm kiếm chuyên nghiệp
-    col_search, col_filter = st.columns([3, 1])
-    with col_search:
-        search_query = st.text_input("🔍 Tìm kiếm cây (theo tên, tên khoa học...)", placeholder="Ví dụ: Monstera, Xương rồng...")
-    with col_filter:
-        filter_type = st.selectbox("Lọc theo loại", ["Tất cả"] + list(df_plants["Loại"].unique()))
-    
-    # Lọc dữ liệu
-    filtered_df = df_plants.copy()
-    if search_query:
-        filtered_df = filtered_df[filtered_df["Tên thường gọi"].str.contains(search_query, case=False) | filtered_df["Tên khoa học"].str.contains(search_query, case=False)]
-    if filter_type != "Tất cả":
-        filtered_df = filtered_df[filtered_df["Loại"] == filter_type]
-    
-    st.subheader(f"📚 Thư viện cây trồng ({len(filtered_df)} kết quả)")
-    
-    # Hiển thị dạng Grid các thẻ cây
-    for i in range(0, len(filtered_df), 3):
-        cols = st.columns(3)
-        for j in range(3):
-            if i + j < len(filtered_df):
-                row = filtered_df.iloc[i + j]
-                original_index = row.name # Lưu lại index gốc để chọn
-                with cols[j]:
-                    with st.container(border=True):
-                        st.markdown(f"## {row['Icon']}")
-                        st.markdown(f"**{row['Tên thường gọi']}**")
-                        st.caption(f"_{row['Tên khoa học']}_")
-                        st.text(f"💧 Nhu cầu: {row['Nhu cầu nước (L/ngày)']} L/ngày")
-                        
-                        # Logic nút chọn
-                        if st.button("📡 KẾT NỐI GIÁM SÁT", key=f"btn_{original_index}", use_container_width=True):
-                            st.session_state.selected_plant_index = original_index
-                            st.rerun() # Load lại trang để vào Dashboard
+# --- BƯỚC 3: CẤU HÌNH BÌNH CHỨA & KẾT QUẢ ---
+# Sidebar cho cấu hình phụ
+with st.sidebar:
+    st.header("⚙️ Thiết lập bình chứa")
+    tank_cap = st.slider("Dung tích bình (Lít)", 1.0, 20.0, 5.0)
+    current_water_pct = st.slider("Lượng nước hiện có (%)", 0, 100, 80)
+    st.info("Kéo thanh trượt để mô phỏng mức nước hiện tại.")
 
-# === TRƯỜNG HỢP 2: ĐÃ CHỌN CÂY (DASHBOARD MODE) ===
-else:
-    # Lấy thông tin cây đã chọn
-    plant = df_plants.iloc[st.session_state.selected_plant_index]
-    
-    # Nút quay lại
-    if st.button("⬅️ Ngắt kết nối / Chọn cây khác"):
-        st.session_state.selected_plant_index = None
-        st.rerun()
-    
-    # --- SIDEBAR (Chỉ hiện khi đã chọn cây để chỉnh tham số môi trường) ---
-    with st.sidebar:
-        st.header("🎛️ Control Center")
-        st.divider()
-        st.write(f"Đang theo dõi: **{plant['Tên thường gọi']}**")
-        
-        st.subheader("⚙️ Phần cứng ảo")
-        tank_cap = st.number_input("Dung tích bình chứa (Lít)", 1.0, 50.0, 5.0)
-        
-        st.subheader("🌤️ Môi trường giả lập")
-        temp = st.slider("Nhiệt độ (°C)", 10, 50, 30)
-        humidity = st.slider("Độ ẩm không khí (%)", 10, 100, 65)
-        
-        st.divider()
-        if st.button("💧 NẠP ĐẦY NƯỚC", type="primary", use_container_width=True):
-            st.session_state.tank_level = 100.0
-            st.toast("Đã nạp đầy bình chứa!", icon="✅")
+# Tính toán
+usage, loss_pct, days_left = calculate_status(plant_info, weather, tank_cap, current_water_pct)
 
-    # --- TÍNH TOÁN AI ---
-    real_loss, loss_pct, days_remain = calculate_analytics(plant, temp, humidity, tank_cap)
-    
-    # --- DASHBOARD LAYOUT ---
-    st.title(f"{plant['Icon']} {plant['Tên thường gọi']} - Dashboard")
-    st.markdown(f"**Tên khoa học:** _{plant['Tên khoa học']}_ | **Phân loại:** {plant['Loại']}")
-    
-    # Cảnh báo nhanh
-    if days_remain < 2:
-        st.error("⚠️ CẢNH BÁO NGUY HIỂM: Nguồn nước sắp cạn kiệt! Cây sẽ bắt đầu chết sau 2 ngày nữa.")
-    elif days_remain < 5:
-        st.warning("⚠️ CHÚ Ý: Cần chuẩn bị bổ sung nước.")
-    
-    # 4 Cột chỉ số chính
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("Lượng nước tiêu thụ thực tế", f"{real_loss:.2f} L/ngày", 
-                  f"{((real_loss/plant['Nhu cầu nước (L/ngày)'])-1)*100:.1f}% so với chuẩn", 
-                  delta_color="inverse")
-    with m2:
-        st.metric("Dự báo thời gian còn lại", f"{days_remain:.1f} Ngày", "Tính đến khi cạn 0%")
-    with m3:
-        safe_color = "normal" if plant['An toàn cho Pet'] else "off"
-        safe_text = "An toàn" if plant['An toàn cho Pet'] else "Độc hại"
-        st.metric("An toàn cho Thú cưng", safe_text, "Chó/Mèo", delta_color=safe_color)
-    with m4:
-        st.metric("Sức chịu hạn của giống", f"{plant['Chịu hạn (Ngày)']} Ngày", "Sau khi hết nước")
+# --- BƯỚC 4: BIỂU ĐỒ ĐƠN GIẢN (THEO YÊU CẦU) ---
 
-    # TABS CHI TIẾT
-    tab_overview, tab_analytics, tab_advisor = st.tabs(["📊 Tổng quan Bình chứa", "📈 Phân tích Môi trường", "🤖 AI Cố vấn"])
+# LAYOUT CHÍNH
+col_main_1, col_main_2 = st.columns([2, 1])
+
+with col_main_1:
+    st.subheader(f"📊 Dự báo cho {plant_info['Icon']} {plant_info['Tên']}")
     
-    with tab_overview:
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            # Gauge Chart xịn xò
-            fig = go.Figure(go.Indicator(
-                mode = "gauge+number+delta",
-                value = st.session_state.tank_level,
-                domain = {'x': [0, 1], 'y': [0, 1]},
-                title = {'text': "Mức nước hiện tại (%)"},
-                delta = {'reference': 100, 'increasing': {'color': "green"}},
-                gauge = {
-                    'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "white"},
-                    'bar': {'color': "#00CC96"},
-                    'bgcolor': "white",
-                    'borderwidth': 2,
-                    'bordercolor': "gray",
-                    'steps': [
-                        {'range': [0, 20], 'color': '#FF4136'},
-                        {'range': [20, 100], 'color': '#1E1E1E'}],
-                    'threshold': {
-                        'line': {'color': "red", 'width': 4},
-                        'thickness': 0.75,
-                        'value': 10}}))
-            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "white", 'family': "Arial"})
-            st.plotly_chart(fig, use_container_width=True)
-            
-        with c2:
-            st.markdown("#### Dự báo cạn kiệt theo thời gian")
-            # Tạo dữ liệu giả lập tương lai
-            future_days = int(days_remain) + 5
-            days_x = list(range(future_days))
-            water_y = [max(0, st.session_state.tank_level - (loss_pct * d)) for d in days_x]
-            
-            df_chart = pd.DataFrame({"Ngày tới": days_x, "Mức nước (%)": water_y})
-            
-            fig_area = px.area(df_chart, x="Ngày tới", y="Mức nước (%)", title="Biểu đồ suy giảm mực nước")
-            fig_area.add_hline(y=0, line_dash="dot", annotation_text="Cạn kiệt", annotation_position="bottom right", line_color="red")
-            st.plotly_chart(fig_area, use_container_width=True)
+    # 1. Biểu đồ đường ĐƠN GIẢN (Line Chart)
+    # Dự báo mực nước giảm dần trong 7 ngày tới
+    future_days = 10
+    levels = []
+    current = current_water_pct
+    for _ in range(future_days):
+        levels.append(max(0, current))
+        current -= loss_pct
+    
+    chart_data = pd.DataFrame({
+        "Ngày": [f"Ngày {i}" for i in range(future_days)],
+        "Mức nước (%)": levels
+    })
+    
+    # Vẽ biểu đồ vùng đơn giản, dễ hiểu
+    fig = px.area(chart_data, x="Ngày", y="Mức nước (%)", 
+                  title="Biểu đồ cạn nước theo thời gian (Dựa trên thời tiết thực)",
+                  color_discrete_sequence=["#00CC96"])
+    
+    # Thêm đường giới hạn đỏ
+    fig.add_hline(y=10, line_dash="dot", line_color="red", annotation_text="Nguy hiểm (10%)")
+    fig.update_layout(yaxis_range=[0, 100])
+    st.plotly_chart(fig, use_container_width=True)
 
-    with tab_analytics:
-        st.subheader("Tác động môi trường đến cây trồng")
-        col_a1, col_a2 = st.columns(2)
-        with col_a1:
-            st.info(f"""
-            **Yêu cầu ánh sáng:** {plant['Ánh sáng']}
-            
-            Hiện tại, với nhiệt độ **{temp}°C**, tốc độ thoát hơi nước của cây đang **{'CAO' if temp > 32 else 'BÌNH THƯỜNG'}**.
-            """)
-        with col_a2:
-            # Biểu đồ radar so sánh đặc tính cây
-            categories = ['Nhu cầu nước', 'Chịu nhiệt', 'Chịu hạn', 'Thẩm mỹ', 'Lọc không khí']
-            # Giả lập chỉ số (Randomize nhẹ cho demo)
-            r_vals = [
-                min(10, plant['Nhu cầu nước (L/ngày)']*10), 
-                8 if temp > 35 and plant['Loại'] == 'Sa mạc' else 5,
-                min(10, plant['Chịu hạn (Ngày)']/5),
-                8, 7
-            ]
-            
-            fig_radar = go.Figure(data=go.Scatterpolar(
-                r=r_vals,
-                theta=categories,
-                fill='toself',
-                name=plant['Tên thường gọi']
-            ))
-            fig_radar.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 10])),
-                showlegend=False,
-                title="Biểu đồ năng lực sinh học của cây"
-            )
-            st.plotly_chart(fig_radar, use_container_width=True)
+with col_main_2:
+    st.subheader("Tiến độ sử dụng")
+    
+    # 2. Biểu đồ Donut ĐƠN GIẢN (Thay thế Gauge phức tạp)
+    fig_donut = go.Figure(data=[go.Pie(
+        labels=['Nước còn lại', 'Đã dùng'], 
+        values=[current_water_pct, 100-current_water_pct], 
+        hole=.7,
+        marker_colors=['#00CC96', '#EEF0F4'],
+        sort=False
+    )])
+    fig_donut.update_layout(
+        showlegend=False, 
+        annotations=[dict(text=f"{days_left:.1f} Ngày", x=0.5, y=0.5, font_size=20, showarrow=False)],
+        margin=dict(t=20, b=20, l=20, r=20),
+        height=250
+    )
+    st.plotly_chart(fig_donut, use_container_width=True)
+    
+    # Hiển thị text ngắn gọn
+    if days_left > 7:
+        st.success("✅ Trạng thái: Ổn định")
+    elif days_left > 3:
+        st.warning("⚠️ Trạng thái: Cần chú ý")
+    else:
+        st.error("🚨 Trạng thái: CẤP CỨU")
 
-    with tab_advisor:
-        st.markdown("### 🤖 Trợ lý AI Sinh thái")
-        with st.chat_message("assistant"):
-            st.write(f"Xin chào! Tôi đang phân tích dữ liệu cho cây **{plant['Tên thường gọi']}**...")
-            advice = []
-            if temp > 35:
-                advice.append(f"- 🌡️ **Cảnh báo nhiệt:** {temp}°C là quá nóng. Hãy di chuyển cây vào bóng râm ngay lập tức để giảm 30% lượng nước tiêu thụ.")
-            if humidity < 40 and plant['Loại'] in ['Ưa ẩm', 'Nhiệt đới']:
-                advice.append("- 💧 **Độ ẩm thấp:** Cây này ưa ẩm. Bạn nên phun sương lên lá 2 lần/ngày.")
-            if days_remain < 3:
-                advice.append(f"- 🚨 **Khẩn cấp:** Chỉ còn nước cho {days_remain:.1f} ngày. Lên lịch châm nước ngay.")
-            
-            if not advice:
-                st.write("Môi trường hiện tại rất lý tưởng. Cây đang phát triển tốt!")
-            else:
-                for item in advice:
-                    st.markdown(item)
-            
-            st.caption(f"Dữ liệu tham chiếu từ: {plant['Tên khoa học']} Database.")
+# --- BƯỚC 5: LỜI KHUYÊN AI (Dựa trên vị trí) ---
+st.markdown("### 🤖 Lời khuyên từ chuyên gia AI")
+
+advice_box = st.container(border=True)
+with advice_box:
+    # Logic so sánh khí hậu
+    temp_diff = weather['temp'] - plant_info['Nhiệt độ lý tưởng']
+    
+    st.write(f"**Phân tích tại {selected_city}:**")
+    
+    # Lời khuyên 1: Nhiệt độ
+    if temp_diff > 5:
+        st.markdown(f"🔥 **Nắng nóng:** Nhiệt độ tại {selected_city} đang nóng hơn {temp_diff:.1f}°C so với mức cây thích. **Hành động:** Dời cây vào bóng râm ngay.")
+    elif temp_diff < -5:
+        st.markdown(f"❄️ **Trời lạnh:** Nhiệt độ thấp. Cây sẽ 'ngủ đông', tưới ít nước lại để tránh thối rễ.")
+    else:
+        st.markdown(f"✅ **Nhiệt độ:** Rất lý tưởng cho cây phát triển.")
+
+    # Lời khuyên 2: Mưa
+    if weather['rain'] > 0 and weather['is_day']:
+        st.markdown(f"🌧️ **Đang mưa:** Tận dụng nước mưa tự nhiên nếu cây ở ngoài trời. Hệ thống sẽ tự động hoãn thông báo tưới.")
+    
+    # Lời khuyên 3: Vị trí
+    if selected_city == "Đà Lạt" and plant_info['Tên'] == "Xương rồng":
+        st.markdown("⚠️ **Lưu ý địa phương:** Đà Lạt có độ ẩm cao và sương mù, Xương rồng rất dễ bị úng. Hãy đảm bảo đất thoát nước cực tốt.")
+    elif selected_city == "Hồ Chí Minh" and plant_info['Tên'] == "Dương xỉ":
+        st.markdown("💡 **Mẹo:** Sài Gòn khá nóng, hãy phun sương cho Dương xỉ 2 lần/ngày.")
