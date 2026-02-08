@@ -4,3 +4,4 @@ plotly
 streamlit-option-menu
 wikipedia
 geopy
+requests
