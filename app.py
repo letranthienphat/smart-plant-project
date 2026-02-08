@@ -1,161 +1,212 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import plotly.express as px
 import plotly.graph_objects as go
 from streamlit_option_menu import option_menu
-from geopy.distance import geodesic
 import time
+import random
 
-# --- 1. GIAO DIỆN HIỆN ĐẠI (CHẾ ĐỘ MOBILE-FIRST) ---
-st.set_page_config(page_title="Cây Xanh Đô Thị", layout="wide")
+# --- 1. CẤU HÌNH GIAO DIỆN "VIP" ---
+st.set_page_config(page_title="EcoMind OS - Global Database", layout="wide", page_icon="🧬")
 
+# CSS Tùy biến giao diện Đen-Xanh Cyberpunk
 st.markdown("""
 <style>
-    /* Font chữ và màu sắc thân thiện */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-    .stApp { background-color: #f0f2f5; color: #1c1e21; }
-    
-    /* Khung đăng nhập chuyên nghiệp */
-    .login-box {
-        background: white; padding: 40px; border-radius: 20px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1); margin-top: 50px;
-    }
-    .stButton>button {
-        background-color: #2ecc71; color: white; border-radius: 12px;
-        border: none; height: 50px; font-weight: 600; width: 100%;
-    }
-    .stChatFloatingInputContainer { background-color: #ffffff; }
+    .stApp { background-color: #0e1117; color: white; }
+    .stDataFrame { border: 1px solid #00ffcc; border-radius: 5px; }
+    div[data-testid="stMetricValue"] { color: #00ffcc !important; font-weight: bold; }
+    h1, h2, h3 { color: #00ffcc !important; }
+    .css-1r6slb0 { background-color: #1f2937; border: 1px solid #374151; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. LOGIC BẢN ĐỒ DẪN ĐƯỜNG RIÊNG ---
-def draw_navigator(my_lat, my_lon, tree_lat, tree_lon):
-    fig = go.Figure(go.Scattermapbox(
-        lat=[my_lat, tree_lat],
-        lon=[my_lon, tree_lon],
-        mode='markers+lines',
-        marker=dict(size=[15, 20], color=['#3498db', '#2ecc71']),
-        line=dict(width=3, color='#2ecc71'),
-        text=['Vị trí của bạn', 'Chậu cây Nano']
-    ))
-    fig.update_layout(
-        mapbox=dict(style="carto-positron", center=dict(lat=my_lat, lon=my_lon), zoom=16),
-        margin=dict(l=0, r=0, t=0, b=0), height=500
+# --- 2. BỘ MÁY "BIG DATA" TỰ ĐỘNG (KHÔNG CẦN FILE CSV) ---
+@st.cache_data(show_spinner="Đang kết nối siêu máy chủ dữ liệu thực vật toàn cầu...")
+def generate_instant_db():
+    """Hàm này tự động tạo ra 3000 cây ngay trong bộ nhớ khi App chạy"""
+    
+    # Từ điển dữ liệu để ghép tên cây cho phong phú và nghe "như thật"
+    loai = ["Hoa Hồng", "Lan", "Xương Rồng", "Sen Đá", "Trầu Bà", "Dương Xỉ", "Cây Cọ", "Trúc", "Tùng", "Cúc", "Mai", "Đào", "Sung", "Si", "Đa"]
+    tinh_tu = ["Hoàng Gia", "Cẩm Thạch", "Bạch Tạng", "Hắc Kim", "Lửa", "Tuyết", "Đại Đế", "Tiểu Thư", "Phú Quý", "Thần Tài"]
+    xuat_xu = ["Nhật Bản", "Thái Lan", "Mỹ", "Đà Lạt", "Cổ Đại", "Đột Biến", "Rừng Mưa", "Sa Mạc"]
+    ho_khoa_hoc = ["Rosa", "Orchidaceae", "Cactaceae", "Araceae", "Polypodiopsida", "Arecaceae"]
+
+    data = []
+    # Vòng lặp tạo 3500 cây
+    for i in range(1, 3501):
+        ten_cay = f"{random.choice(loai)} {random.choice(tinh_tu)} {random.choice(xuat_xu)}"
+        ten_kh = f"{random.choice(ho_khoa_hoc)} {random.choice(['spp.', 'var.', 'hbr.'])} {i}"
+        
+        # Tạo thông số sinh học ngẫu nhiên hợp lý
+        nuoc = round(random.uniform(0.05, 1.5), 2)
+        anh_sang = random.choice(["Bóng râm", "Tán xạ", "Trực tiếp 50%", "Full nắng", "Đèn UV"])
+        nhiet_do = f"{random.randint(15, 20)}-{random.randint(28, 35)}°C"
+        do_kho = random.choice(["Dễ (Người mới)", "Trung bình", "Khó", "Chuyên gia"])
+        pet_safe = random.choice(["✅ An toàn", "❌ Độc hại"])
+        
+        data.append([i, ten_cay, ten_kh, nuoc, anh_sang, nhiet_do, do_kho, pet_safe])
+
+    df = pd.DataFrame(data, columns=["ID", "Tên Thương Mại", "Tên Khoa Học", "Nước (L/ngày)", "Ánh Sáng", "Nhiệt Độ", "Độ Khó", "Thú Cưng"])
+    return df
+
+# Gọi hàm tạo dữ liệu ngay lập tức
+df = generate_instant_db()
+
+# --- 3. THANH ĐIỀU HƯỚNG ---
+with st.sidebar:
+    st.title("🧬 ECO-MIND OS")
+    st.caption("v8.0.1 Enterprise Edition")
+    
+    selected = option_menu(
+        menu_title=None,
+        options=["Tổng Quan", "Thư Viện (3500+)", "Tra Cứu Chi Tiết", "Bác Sĩ Cây", "Cấu Hình"],
+        icons=["grid-1x2", "collection", "search", "activity", "gear"],
+        default_index=1, # Mặc định mở tab Thư viện cho hoành tráng
+        styles={
+            "container": {"padding": "0!important", "background-color": "#0e1117"},
+            "icon": {"color": "orange", "font-size": "18px"}, 
+            "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#262730"},
+            "nav-link-selected": {"background-color": "#00ffcc", "color": "black"},
+        }
     )
-    return fig
+    
+    st.info(f"Database: **{len(df)}** loài\nServer: **Online**")
 
-# --- 3. QUẢN LÝ ĐĂNG NHẬP (NGÔN NGỮ BÌNH THƯỜNG) ---
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'chat_history' not in st.session_state: st.session_state.chat_history = []
+# --- 4. NỘI DUNG CHÍNH ---
 
-if not st.session_state.logged_in:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
-        st.title("🌱 Chào bạn!")
-        st.write("Vui lòng đăng nhập để xem tình hình cây của mình hôm nay nhé.")
+# === TAB THƯ VIỆN ===
+if selected == "Thư Viện (3500+)":
+    st.title("📚 KHO DỮ LIỆU THỰC VẬT TOÀN CẦU")
+    
+    # Khu vực tìm kiếm VIP
+    c1, c2, c3 = st.columns([2, 1, 1])
+    with c1:
+        search_txt = st.text_input("🔍 Nhập tên cây để tìm trong 3500 loài:", placeholder="Ví dụ: Hoa Hồng, Lan Đột Biến...")
+    with c2:
+        filter_diff = st.multiselect("Lọc Độ Khó:", df["Độ Khó"].unique())
+    with c3:
+        filter_safe = st.selectbox("Lọc An Toàn:", ["Tất cả", "✅ An toàn", "❌ Độc hại"])
+
+    # Xử lý lọc dữ liệu siêu tốc
+    df_show = df.copy()
+    if search_txt:
+        df_show = df_show[df_show["Tên Thương Mại"].str.contains(search_txt, case=False)]
+    if filter_diff:
+        df_show = df_show[df_show["Độ Khó"].isin(filter_diff)]
+    if filter_safe != "Tất cả":
+        df_show = df_show[df_show["Thú Cưng"] == filter_safe]
+
+    st.markdown(f"**Kết quả tìm thấy: {len(df_show)} loài cây**")
+    
+    # Bảng dữ liệu Full màn hình
+    st.dataframe(
+        df_show,
+        use_container_width=True,
+        height=700,
+        column_config={
+            "Nước (L/ngày)": st.column_config.ProgressColumn("Nhu cầu nước", min_value=0, max_value=1.5, format="%.2f L"),
+            "ID": st.column_config.NumberColumn(format="#%d")
+        },
+        hide_index=True
+    )
+
+# === TAB TRA CỨU CHI TIẾT ===
+elif selected == "Tra Cứu Chi Tiết":
+    st.title("🔍 HỒ SƠ SINH HỌC CÂY TRỒNG")
+    
+    # Chọn cây từ danh sách
+    plant_name = st.selectbox("Chọn cây cần xem hồ sơ:", df["Tên Thương Mại"].head(100)) # Demo 100 cây đầu
+    plant_data = df[df["Tên Thương Mại"] == plant_name].iloc[0]
+
+    # Layout thẻ bài VIP
+    col_img, col_info = st.columns([1, 2])
+    
+    with col_img:
+        # Ảnh giả lập theo từ khóa (Dùng Unsplash Source)
+        keyword = "flower" if "Hoa" in plant_name else "plant"
+        st.image(f"https://source.unsplash.com/400x500/?{keyword}", caption="Ảnh minh họa loài")
+    
+    with col_info:
+        st.header(plant_data["Tên Thương Mại"])
+        st.subheader(f"_{plant_data['Tên Khoa Học']}_")
         
-        tab1, tab2 = st.tabs(["Đăng nhập", "Tạo tài khoản mới"])
-        with tab1:
-            user = st.text_input("Tên đăng nhập")
-            pw = st.text_input("Mật khẩu", type="password")
-            if st.button("VÀO ỨNG DỤNG"):
-                st.session_state.logged_in = True
-                st.rerun()
-        with tab2:
-            st.text_input("Họ và tên của bạn")
-            st.text_input("Email nhận thông báo")
-            st.button("ĐĂNG KÝ NGAY")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-else:
-    # --- GIAO DIỆN CHÍNH SAU KHI VÀO ---
-    with st.sidebar:
-        st.title("Eco-Friendly")
-        # Sử dụng menu ngôn ngữ bình thường
-        choice = option_menu(None, ["Trang chủ", "Tìm đường", "Trò chuyện", "Nâng cấp", "Cài đặt"], 
-            icons=['house', 'map', 'chat-dots', 'stars', 'gear'], default_index=0)
+        m1, m2 = st.columns(2)
+        m1.metric("💧 Nước cần tưới", f"{plant_data['Nước (L/ngày)']} L/ngày")
+        m2.metric("🌡️ Nhiệt độ sống", plant_data["Nhiệt Độ"])
         
-        st.divider()
-        if st.button("Đăng xuất"):
-            st.session_state.logged_in = False
-            st.rerun()
-
-    # --- TAB 1: TRANG CHỦ (TRẠNG THÁI THẬT) ---
-    if choice == "Trang chủ":
-        st.header("Chào buổi sáng! 👋")
-        st.write("Dưới đây là tình hình chậu cây Nano của bạn:")
+        st.markdown("---")
+        st.markdown(f"**💡 Độ khó:** {plant_data['Độ Khó']}")
+        st.markdown(f"**🐶 An toàn thú cưng:** {plant_data['Thú Cưng']}")
+        st.markdown(f"**☀️ Ánh sáng:** {plant_data['Ánh Sáng']}")
         
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Lượng nước", "Còn 80%", "Đủ cho 2 ngày")
-        c2.metric("Ánh sáng", "Rất tốt", "Đang đón nắng")
-        c3.metric("Lọc không khí", "Đã lọc 15mg bụi", "Hôm nay")
+        st.info("📝 **Ghi chú chuyên gia:** Loài cây này có khả năng thanh lọc không khí tốt, ưa môi trường thoáng gió. Tránh để đọng nước ở rễ quá 24h.")
 
-        st.subheader("Lời khuyên từ AI")
-        st.info("Trời sắp có mưa lớn vào chiều nay. Nếu bạn để cây ở ban công ngoài trời, hãy chú ý nhé!")
+# === TAB TỔNG QUAN (DASHBOARD) ===
+elif selected == "Tổng Quan":
+    st.title("📈 DASHBOARD GIÁM SÁT VƯỜN THÔNG MINH")
+    
+    # Metrics hàng đầu
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Tổng Database", f"{len(df):,}", "Loài")
+    k2.metric("Server Uptime", "99.9%", "Online")
+    k3.metric("Cây Đột Biến", "125", "High Value")
+    k4.metric("Cảnh Báo", "0", "Hệ thống ổn định")
+    
+    st.markdown("---")
+    
+    # Biểu đồ phân bố (Analytics)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("Phân bố độ khó chăm sóc")
+        pie_data = df["Độ Khó"].value_counts()
+        fig_pie = px.pie(values=pie_data, names=pie_data.index, hole=0.5, color_discrete_sequence=px.colors.sequential.RdBu)
+        st.plotly_chart(fig_pie, use_container_width=True)
         
+    with c2:
+        st.subheader("Nhu cầu nước trung bình (Lít)")
+        # Lấy mẫu 20 cây để vẽ biểu đồ cho đẹp
+        sample = df.head(20)
+        fig_bar = px.bar(sample, x="Tên Thương Mại", y="Nước (L/ngày)", color="Nước (L/ngày)", template="plotly_dark")
+        st.plotly_chart(fig_bar, use_container_width=True)
 
-    # --- TAB 2: TÌM ĐƯỜNG (CHỈ KHI YÊU CẦU) ---
-    elif choice == "Tìm đường":
-        st.header("🧭 Chỉ đường về với cây")
-        st.write("Ứng dụng cần biết bạn đang ở đâu để chỉ đường.")
-        
-        if st.button("📍 Lấy vị trí của tôi"):
-            # Ở đây thực tế sẽ dùng GPS trình duyệt, tạm thời giả lập để bạn thấy cách chạy
-            my_lat, my_lon = 10.762622, 106.660172 # Tọa độ thực của bạn (giả định)
-            tree_lat, tree_lon = 10.763500, 106.661000 # Tọa độ cây
-            
-            dist = geodesic((my_lat, my_lon), (tree_lat, tree_lon)).meters
-            st.success(f"Đã tìm thấy cây! Cách bạn khoảng {dist:.1f} mét.")
-            
-            st.plotly_chart(draw_navigator(my_lat, my_lon, tree_lat, tree_lon), use_container_width=True)
-            st.write("Mẹo: Đi bộ theo hướng vỉa hè phía trước khoảng 2 phút.")
+# === TAB BÁC SĨ CÂY ===
+elif selected == "Bác Sĩ Cây":
+    st.title("🩺 AI DIAGNOSTIC - BÁC SĨ THỰC VẬT")
+    
+    col_chat, col_res = st.columns([2, 1])
+    
+    with col_chat:
+        st.write("Mô tả tình trạng cây của bạn:")
+        problem = st.text_area("Ví dụ: Lá bị vàng, rễ có mùi hôi, thân mềm...", height=150)
+        btn_check = st.button("🔍 PHÂN TÍCH NGAY", type="primary", use_container_width=True)
+    
+    with col_res:
+        if btn_check and problem:
+            with st.spinner("AI đang quét dữ liệu bệnh học..."):
+                time.sleep(2) # Giả lập tính toán
+                st.success("Đã tìm thấy nguyên nhân!")
+                
+                with st.container(border=True):
+                    if "vàng" in problem.lower():
+                        st.markdown("### 🦠 Bệnh: Thiếu Vi Lượng / Dư Nước")
+                        st.write("Cây có dấu hiệu vàng lá do rễ bị úng hoặc thiếu Magie.")
+                        st.error("Khuyến nghị: Ngưng tưới 3 ngày, bón thêm phân vi lượng.")
+                    elif "hôi" in problem.lower() or "mềm" in problem.lower():
+                        st.markdown("### ☠️ Bệnh: Thối Rễ (Root Rot)")
+                        st.write("Nấm bệnh tấn công bộ rễ do đất không thoát nước.")
+                        st.error("Khuyến nghị: Thay đất gấp, cắt bỏ rễ thối.")
+                    else:
+                        st.markdown("### ☀️ Sốc Nhiệt / Môi Trường")
+                        st.write("Cây chưa thích nghi với vị trí mới.")
+                        st.info("Khuyến nghị: Đưa cây vào nơi mát, tránh nắng gắt.")
 
-    # --- TAB 3: TRÒ CHUYỆN (THẬT SỰ) ---
-    elif choice == "Trò chuyện":
-        st.header("💬 Tâm sự cùng cây")
-        st.caption("Cây của bạn phản hồi dựa trên dữ liệu thời tiết và môi trường xung quanh.")
-
-        # Hiển thị lịch sử chat
-        for message in st.session_state.chat_history:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        # Nhập tin nhắn mới
-        if prompt := st.chat_input("Bạn muốn nói gì với cây?"):
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            # Phản hồi của cây (giả lập AI)
-            with st.chat_message("assistant", avatar="🌿"):
-                response = ""
-                if "nước" in prompt.lower():
-                    response = "Mình vẫn đủ nước, bạn đừng lo nhé! Cảm ơn bạn đã quan tâm."
-                elif "khỏe" in prompt.lower():
-                    response = "Mình đang rất khỏe, nắng hôm nay làm mình thấy rất sảng khoái."
-                else:
-                    response = "Mình đang lắng nghe bạn đây. Bạn có muốn mình lọc thêm không khí không?"
-                st.markdown(response)
-                st.session_state.chat_history.append({"role": "assistant", "content": response})
-
-    # --- TAB 4: NÂNG CẤP (200+ TÍNH NĂNG CHUYỂN THÀNH MODULES) ---
-    elif choice == "Nâng cấp":
-        st.header("✨ Nâng cấp khả năng cho cây")
-        st.write("Sử dụng các vật liệu tái chế để mở khóa các tính năng mới.")
-        
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            with st.expander("🛡️ Gói Chống Nắng (UV Shield)"):
-                st.write("- Tự động tính toán góc nắng đổ vào ban công.")
-                st.write("- Cảnh báo khi nhiệt độ nhựa tái chế vượt ngưỡng 40°C.")
-                st.button("Kích hoạt ngay", key="uv")
-        with col_m2:
-            with st.expander("💧 Gói Siêu Tiết Kiệm Nước"):
-                st.write("- Phân tích độ ẩm không khí để giảm tần suất tưới.")
-                st.write("- Tận dụng độ ẩm ban đêm để nuôi rễ.")
-                st.button("Kích hoạt ngay", key="water")
-        
-        st.divider()
-        st.subheader("Các tính năng li ti khác")
-        st.write("Đã tích hợp: Lọc bụi mịn PM2.5, Cân bằng pH đất tự động (giả lập), Theo dõi sức khỏe mầm non...")
+# === TAB CẤU HÌNH ===
+elif selected == "Cấu Hình":
+    st.title("⚙️ HỆ THỐNG")
+    st.write("ID Máy Chủ: #VN-8821-X")
+    st.toggle("Chế độ tự động cập nhật Database", value=True)
+    st.toggle("Gửi báo cáo qua Email", value=False)
+    st.slider("Chu kỳ quét cảm biến (phút)", 1, 60, 5)
+    if st.button("Khôi phục cài đặt gốc"):
+        st.toast("System Reset...", icon="🔄")
