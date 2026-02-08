@@ -1,163 +1,143 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from streamlit_option_menu import option_menu
 import wikipedia
 from geopy.distance import geodesic
 import requests
-import time
+import datetime
 
 # --- 1. CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="EcoMind OS v16", layout="wide")
+st.set_page_config(page_title="EcoMind v18 - Weather Intel", layout="wide")
 wikipedia.set_lang("vi")
 
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: white; }
-    .version-tag { color: #00ffcc; font-family: monospace; font-size: 14px; }
-    .stMetric { background: #1f2937; padding: 15px; border-radius: 10px; border-left: 5px solid #00ffcc; }
-    .upcoming-card { background: #2d3748; padding: 15px; border-radius: 10px; border-bottom: 3px solid #ed64a6; margin-bottom: 10px; }
+    .status-box { padding: 20px; border-radius: 15px; background: #1f2937; border-left: 5px solid #00ffcc; margin-bottom: 20px; }
+    .plant-voice { font-style: italic; color: #ffeb3b; font-size: 1.2rem; text-align: center; padding: 10px; }
+    .stButton>button { width: 100%; border-radius: 10px; height: 3.5em; background: #00ffcc; color: black; font-weight: bold; border: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. DỮ LIỆU PHIÊN BẢN (HISTORY) ---
-VERSION_HISTORY = [
-    {"Bản": "v1.0", "Ngày": "01/2026", "Tính năng": "Khởi tạo Dashboard cơ bản."},
-    {"Bản": "v8.0", "Ngày": "01/2026", "Tính năng": "Giao diện Neon Cyberpunk & 3500 cây dữ liệu."},
-    {"Bản": "v10.0", "Ngày": "02/2026", "Tính năng": "Tích hợp Wikipedia & Vị trí vệ tinh."},
-    {"Bản": "v15.0", "Ngày": "02/2026", "Tính năng": "Logistics AI & Dự báo thời tiết 7 ngày."},
-    {"Bản": "v16.0", "Ngày": "Hôm nay", "Tính năng": "Bản đồ nội bộ, Nhật ký nâng cấp & Lộ trình tương lai."}
-]
-
-# --- 3. QUẢN LÝ TRẠNG THÁI ---
-if 'auth' not in st.session_state: st.session_state.auth = None
-if 'p_coords' not in st.session_state: st.session_state.p_coords = (21.0285, 105.8542) # Mặc định HN
-if 'u_coords' not in st.session_state: st.session_state.u_coords = (10.8231, 106.6297) # Mặc định HCM
-
-# --- 4. HÀM TIỆN ÍCH ---
-def get_coords(address):
+# --- 2. HÀM LẤY DỮ LIỆU KHÍ TƯỢNG ---
+def get_weather_data(lat, lon):
     try:
-        url = f"https://nominatim.openstreetmap.org/search?q={address}&format=json&limit=1"
-        res = requests.get(url, headers={'User-Agent': 'EcoMind_v16'}).json()
-        if res: return float(res[0]['lat']), float(res[0]['lon']), res[0]['display_name']
+        # Lấy dữ liệu thực tế hiện tại và lượng mưa từ Open-Meteo
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,precipitation,is_day&timezone=auto"
+        res = requests.get(url).json()
+        return res['current']
     except: return None
 
-# --- 5. HỆ THỐNG XÁC THỰC & THIẾT LẬP ---
-if st.session_state.auth is None:
-    # (Phần code Đăng nhập/Đăng ký/Khách giữ nguyên như bản v15)
-    st.title("🧬 EcoMind Portal")
-    choice = st.radio("Lựa chọn:", ["Đăng nhập", "Đăng ký", "Vào xem thử (Khách)"], horizontal=True)
-    if st.button("Xác nhận"): 
-        st.session_state.auth = "user"
-        st.rerun()
-
-elif 'setup_done' not in st.session_state:
-    st.title("📍 Thiết lập tọa độ")
-    col_p, col_u = st.columns(2)
-    with col_p:
-        addr_p = st.text_input("Vị trí cây:")
-        if st.button("Ghim cây"): 
-            res = get_coords(addr_p)
-            if res: st.session_state.p_coords = (res[0], res[1])
-    with col_u:
-        addr_u = st.text_input("Vị trí của bạn:")
-        if st.button("Ghim bạn"): 
-            res = get_coords(addr_u)
-            if res: st.session_state.u_coords = (res[0], res[1])
+# --- 3. LOGIC TÍNH TOÁN TỰ ĐỘNG (KHÔNG NHẬP LIỆU) ---
+def analyze_plant_status(weather):
+    if not weather: return "Đang kết nối đài khí tượng...", "⚪"
     
-    if st.button("VÀO DASHBOARD"):
-        st.session_state.setup_done = True
-        st.session_state.p_data = {"name": "Lan Hồ Điệp", "water": 4.0, "need": 0.5}
-        st.rerun()
+    temp = weather['temperature_2m']
+    rain = weather['precipitation']
+    
+    # Giả lập logic: Nếu nóng trên 30 độ mà không mưa -> Khát
+    if rain > 0.5:
+        return "Mình vừa được uống nước mưa, sướng quá!", "🌧️"
+    elif temp > 32:
+        return "Trời nắng nóng quá, mình đang bị bốc hơi nước nhanh lắm!", "🔥"
+    elif temp < 20:
+        return "Trời hơi lạnh, mình không cần uống nhiều nước đâu.", "❄️"
+    else:
+        return "Thời tiết hôm nay thật dễ chịu, mình vẫn ổn!", "🍃"
 
-# --- 6. GIAO DIỆN CHÍNH ---
-else:
-    with st.sidebar:
-        st.title("ECO-MIND v16")
-        menu = option_menu(None, ["Tổng quan", "Dẫn đường", "Wikipedia", "Tính năng sắp tới", "Cài đặt"], 
-            icons=['house', 'map', 'book', 'rocket-takeoff', 'gear'], default_index=0)
-        st.divider()
-        st.write("🌿 Hệ thống đang hoạt động ổn định")
+# --- 4. KIỂM TRA ĐĂNG NHẬP ---
+if 'auth' not in st.session_state: st.session_state.auth = None
 
-    # --- TAB 1: TỔNG QUAN ---
-    if menu == "Tổng quan":
-        st.header(f"📊 Giám sát cây: {st.session_state.p_data['name']}")
-        c1, c2 = st.columns(2)
-        c1.metric("Mực nước", f"{st.session_state.p_data['water']} L")
-        c2.metric("Trạng thái", "Khỏe mạnh")
-        # Dự báo thời tiết (Giữ nguyên logic bản v15)
-        st.info("💡 Dự báo: Ngày mai có mưa, bạn có thể giảm lượng tưới tự động.")
-
-    # --- TAB 2: DẪN ĐƯỜNG (NEW FEATURE) ---
-    elif menu == "Dẫn đường":
-        st.header("🗺️ Lựa chọn bản đồ dẫn đường")
-        dist = geodesic(st.session_state.u_coords, st.session_state.p_coords).km
-        st.write(f"Khoảng cách đường chim bay: **{dist:.2f} km**")
-
-        nav_choice = st.radio("Chọn phương thức dẫn đường:", ["Bản đồ EcoMind (Nội bộ)", "Google Maps (Ứng dụng ngoài)"])
-
-        if nav_choice == "Bản đồ EcoMind (Nội bộ)":
-            st.subheader("📍 Tuyến đường an toàn của chúng ta")
-            # Hiển thị lộ trình bằng cách vẽ đường nối trên bản đồ
-            route_df = pd.DataFrame({
-                'lat': [st.session_state.u_coords[0], st.session_state.p_coords[0]],
-                'lon': [st.session_state.u_coords[1], st.session_state.p_coords[1]],
-                'label': ['Bạn', 'Cây']
-            })
-            st.map(route_df)
-            st.success("Tuyến đường này đã được tối ưu để tránh các khu vực ô nhiễm không khí.")
-        
-        else:
-            gmaps_url = f"https://www.google.com/maps/dir/{st.session_state.u_coords[0]},{st.session_state.u_coords[1]}/{st.session_state.p_coords[0]},{st.session_state.p_coords[1]}/"
-            st.markdown(f'<a href="{gmaps_url}" target="_blank"><button style="width:100%; height:50px; background:#4285F4; color:white; border:none; border-radius:10px; cursor:pointer; font-weight:bold;">🚀 MỞ GOOGLE MAPS</button></a>', unsafe_allow_html=True)
-
-    # --- TAB 3: WIKIPEDIA (2 CHẾ ĐỘ) ---
-    elif menu == "Wikipedia":
-        st.header("📚 Bách khoa toàn thư")
-        mode = st.toggle("Xem toàn văn (Mặc định: Tóm tắt)")
-        q = st.text_input("Tìm cây:", value=st.session_state.p_data['name'])
-        if q:
-            try:
-                if not mode:
-                    st.info(wikipedia.summary(f"Cây {q}", sentences=3))
-                else:
-                    p = wikipedia.page(f"Cây {q}")
-                    st.write(p.content)
-            except: st.error("Không tìm thấy dữ liệu.")
-
-    # --- TAB 4: TÍNH NĂNG SẮP TỚI (SIDEBAR ITEM) ---
-    elif menu == "Tính năng sắp tới":
-        st.header("🚀 Lộ trình phát triển (Roadmap)")
-        upcoming = [
-            {"t": "Nhận diện cây qua Camera", "d": "Sử dụng AI để biết cây đang bị sâu bệnh gì chỉ qua 1 bức ảnh."},
-            {"t": "Kết nối cộng đồng", "d": "Chia sẻ kinh nghiệm chăm sóc cây với những người dùng khác quanh bạn."},
-            {"t": "Điều khiển vòi tưới IoT", "d": "Nhấn nút trên app để vòi nước tại nhà tự động mở."}
-        ]
-        for item in upcoming:
-            st.markdown(f"""<div class="upcoming-card">
-                <h4>✨ {item['t']}</h4>
-                <p>{item['d']}</p>
-            </div>""", unsafe_allow_html=True)
-
-    # --- TAB 5: CÀI ĐẶT (VERSION INFO + DELETE) ---
-    elif menu == "Cài đặt":
-        st.header("⚙️ Cài đặt hệ thống")
-        
-        with st.expander("ℹ️ Thông tin phiên bản & Kỹ thuật", expanded=True):
-            st.markdown(f"**Phiên bản hiện tại:** <span class='version-tag'>v16.0.4-stable</span>", unsafe_allow_html=True)
-            st.write("**Thông số kỹ thuật:**")
-            st.code("""
-            - Engine: Python 3.12 / Streamlit 1.31
-            - Maps: OpenStreetMap / Google API Hybrid
-            - Data: Wikipedia Cloud Sync
-            - Logistics: Geopy Matrix Calculation
-            """)
-            st.write("**Lịch sử nâng cấp:**")
-            st.table(pd.DataFrame(VERSION_HISTORY))
-
-        st.divider()
-        if st.button("❌ Xóa tài khoản"):
-            st.error("Dữ liệu đang được hủy...")
-            time.sleep(1)
-            for k in list(st.session_state.keys()): del st.session_state[k]
+if st.session_state.auth is None:
+    # Giao diện đăng nhập tràn màn hình
+    st.title("🌿 ECO-MIND v18")
+    st.subheader("Hệ thống quản lý cây tái chế qua dữ liệu khí tượng")
+    col_log, col_empty = st.columns([1, 0.01]) # Tràn màn hình
+    with col_log:
+        st.text_input("Tên đăng nhập")
+        st.text_input("Mật khẩu", type="password")
+        if st.button("VÀO HỆ THỐNG"):
+            st.session_state.auth = "user"
+            st.session_state.p_coords = (21.0285, 105.8542) # Mặc định Hà Nội
+            st.session_state.u_coords = (21.0333, 105.8333)
             st.rerun()
+
+else:
+    # --- THANH BÊN (SIDEBAR) ---
+    with st.sidebar:
+        st.title("ECO-NAVIGATOR")
+        menu = option_menu(None, ["Trạng thái cây", "Dẫn đường", "Wiki Cây", "Tính năng dự kiến", "Cài đặt"], 
+            icons=['heart-pulse', 'signpost-turn-right', 'book', 'magic', 'gear'], default_index=0)
+        
+        st.divider()
+        st.write("📡 **Kết nối đài khí tượng:** Sẵn sàng")
+        if st.button("Đăng xuất"):
+            st.session_state.auth = None
+            st.rerun()
+
+    # --- TAB 1: TRẠNG THÁI CÂY (TỰ ĐỘNG) ---
+    if menu == "Trạng thái cây":
+        st.header("🌦️ Phân tích từ Đài khí tượng")
+        
+        # Lấy dữ liệu thời tiết thực tế tại tọa độ cây
+        w_data = get_weather_data(st.session_state.p_coords[0], st.session_state.p_coords[1])
+        voice, icon = analyze_plant_status(w_data)
+        
+        st.markdown(f"""
+        <div class="status-box">
+            <h1 style="text-align:center;">{icon}</h1>
+            <p class="plant-voice">"{voice}"</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        c1, c2, c3 = st.columns(3)
+        if w_data:
+            c1.metric("Nhiệt độ ngoài trời", f"{w_data['temperature_2m']}°C")
+            c2.metric("Độ ẩm không khí", f"{w_data['relative_humidity_2m']}%")
+            c3.metric("Lượng mưa thực tế", f"{w_data['precipitation']} mm")
+
+        st.divider()
+        st.subheader("💡 Lời khuyên cho bạn")
+        if w_data and w_data['precipitation'] > 0:
+            st.success("Hôm nay đài khí tượng báo có mưa tại vườn. Bạn không cần phải về tưới cây đâu!")
+        else:
+            st.warning("Dựa vào độ ẩm thấp, bạn nên sắp xếp về thăm cây trong 1-2 ngày tới.")
+
+    # --- TAB 2: DẪN ĐƯỜNG THẬT THỤ ---
+    elif menu == "Dẫn đường":
+        st.header("🧭 Dẫn đường trực tiếp về vườn")
+        dist = geodesic(st.session_state.u_coords, st.session_state.p_coords).km
+        st.write(f"Vị trí cây cách bạn: **{dist:.2f} km**")
+        
+        st.map(pd.DataFrame({'lat': [st.session_state.u_coords[0], st.session_state.p_coords[0]], 
+                             'lon': [st.session_state.u_coords[1], st.session_state.p_coords[1]]}))
+        
+        st.divider()
+        # Nút dẫn đường thật thụ mở ứng dụng Google Maps
+        dest_url = f"https://www.google.com/maps/dir/?api=1&origin={st.session_state.u_coords[0]},{st.session_state.u_coords[1]}&destination={st.session_state.p_coords[0]},{st.session_state.p_coords[1]}&travelmode=driving"
+        
+        st.markdown(f'<a href="{dest_url}" target="_blank"><button>🧭 BẬT CHỈ ĐƯỜNG TỪNG BƯỚC (GOOGLE MAPS)</button></a>', unsafe_allow_html=True)
+        st.caption("Lưu ý: Nút này sẽ mở ứng dụng Google Maps trên điện thoại để dẫn đường bằng giọng nói.")
+
+    # --- TAB 3: TÍNH NĂNG DỰ KIẾN (SIDEBAR ITEM) ---
+    elif menu == "Tính năng dự kiến":
+        st.header("🚀 Sắp ra mắt")
+        st.markdown("""
+        - **Cảnh báo bão:** Tự động gọi điện/nhắn tin nếu đài khí tượng báo có bão lớn sắp đổ bộ vào vùng có cây.
+        - **AR Shadow:** Dùng camera để xem bóng nắng sẽ quét qua cây như thế nào trong ngày.
+        - **Bảng xếp hạng Tái chế:** Vinh danh những người dùng sử dụng nhiều vật liệu tái chế nhất.
+        """)
+
+    # --- TAB 4: CÀI ĐẶT (VERSION INFO) ---
+    elif menu == "Cài đặt":
+        st.header("⚙️ Thông tin hệ thống")
+        with st.expander("📝 Nhật ký phiên bản", expanded=True):
+            st.write("**Phiên bản hiện tại:** v18.0.2")
+            st.table(pd.DataFrame([
+                {"Bản": "v18.0", "Thay đổi": "Tự động lấy dữ liệu thời tiết, Dẫn đường trực tiếp (Navigation Mode)."},
+                {"Bản": "v17.0", "Thay đổi": "Giao diện tràn màn hình, bỏ kết nối phần cứng điện tử."},
+                {"Bản": "v1.0 - v16.0", "Thay đổi": "Xây dựng nền tảng và bách khoa toàn thư."}
+            ]))
+        
+        st.write("**Thông số kỹ thuật:**")
+        st.code("Weather Engine: Open-Meteo API (Real-time)\nMap Engine: Google Maps Direction Services\nLogic: Evaporation Inference Model")
