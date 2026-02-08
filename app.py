@@ -1,139 +1,128 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from streamlit_option_menu import option_menu
 from geopy.distance import geodesic
+import requests
 import datetime
-import random
 
-# --- 1. CẤU HÌNH GIAO DIỆN CÔNG NGHIỆP ---
-st.set_page_config(page_title="EcoMind Pro v23", layout="wide")
+# --- 1. CẤU HÌNH & GIAO DIỆN TRÀN MÀN HÌNH ---
+st.set_page_config(page_title="EcoMind Urban Core v25", layout="wide")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #050505; color: #00ff41; font-family: 'Courier New', monospace; }
-    .data-card { border: 1px solid #00ff41; padding: 10px; margin: 5px; font-size: 11px; background: rgba(0,255,65,0.05); }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { border: 1px solid #00ff41; padding: 10px; color: #00ff41; }
+    .stApp { background-color: #0a0c10; color: #00ffcc; }
+    .main-frame { border: 2px solid #00ffcc; padding: 25px; border-radius: 20px; background: rgba(0, 255, 204, 0.03); box-shadow: 0 0 20px rgba(0,255,204,0.1); }
+    .stMetric { background: #161b22 !important; border-radius: 10px !important; border: 1px solid #30363d !important; }
+    .chat-bubble { padding: 10px; border-radius: 10px; margin-bottom: 5px; border-left: 4px solid #00ffcc; background: #1c2128; }
+    .stButton>button { border-radius: 10px; height: 3em; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. HÀM DẪN ĐƯỜNG NỘI BỘ REAL-TIME ---
-def get_internal_nav(u_lat, u_lon, p_lat, p_lon):
-    dist = geodesic((u_lat, u_lon), (p_lat, p_lon)).meters
-    # Tính góc hướng (bearing)
+# --- 2. HỆ THỐNG DẪN ĐƯỜNG NỘI BỘ (REAL-TIME NAV) ---
+def build_radar_map(u_lat, u_lon, p_lat, p_lon):
     fig = go.Figure(go.Scattermapbox(
-        mode = "markers+lines",
-        lat = [u_lat, p_lat], lon = [u_lon, p_lon],
-        marker = {'size': 12, 'color': ["#3b82f6", "#00ff41"]},
-        line = dict(width=2, color="#00ff41")
+        lat=[u_lat, p_lat], lon=[u_lon, p_lon],
+        mode='markers+lines',
+        marker=dict(size=[15, 25], color=['#3b82f6', '#00ffcc'], symbol=['circle', 'garden']),
+        line=dict(width=4, color='#00ffcc'),
+        text=['BẠN', 'SẢN PHẨM ECO'],
     ))
     fig.update_layout(
-        mapbox = {'style': "carto-darkmatter", 'center': {'lat': u_lat, 'lon': u_lon}, 'zoom': 17},
-        margin = {'l':0,'r':0,'t':0,'b':0}, height=400
+        mapbox=dict(style="carto-darkmatter", center=dict(lat=u_lat, lon=u_lon), zoom=16),
+        margin=dict(l=0, r=0, t=0, b=0), height=450, paper_bgcolor='rgba(0,0,0,0)'
     )
-    return fig, dist
+    return fig
 
-# --- 3. MA TRẬN 200 THÔNG SỐ (DATABASE LỚP LI TI) ---
-def get_matrix_200():
-    # Đây là danh sách các biến số thực tế mô phỏng cho sản phẩm Nano
-    specs = {
-        "Vật liệu & Cơ khí (40)": [
-            "Độ dày nhựa thành chậu: 1.25mm", "Hệ số dẫn nhiệt PET: 0.15 W/mK", "Trọng lượng rỗng: 215g",
-            "Độ chịu lực nén đỉnh: 450N", "Tỷ lệ nhựa tái chế: 85%", "Hệ số Albedo bề mặt: 0.12",
-            "Độ bóng bề mặt (Gloss): 35%", "Nhiệt độ nóng chảy vật liệu: 260°C", "Hệ số giãn nở: 7e-5/°C",
-            "Dung tích bình dự trữ: 350ml", "Đường kính lỗ thoát nước: 4mm", "Độ nhám bề mặt (Ra): 0.8µm",
-            "Mật độ hạt nhựa: 1.38 g/cm³", "Độ bền kéo: 55 MPa", "Khả năng chống tia UV: 98%"
-            # ... tiếp tục đến 40 mục
-        ],
-        "Thủy lực & Thổ nhưỡng (60)": [
-            "Tốc độ thẩm thấu mao dẫn: 0.2mm/s", "Độ rỗng xốp của đất: 45%", "Hệ số giữ nước (WHC): 65%",
-            "Độ pH hiện tại: 6.5", "Nồng độ N tổng số: 1.2%", "Nồng độ P dễ tiêu: 0.8%",
-            "Độ dẫn điện đất (EC): 1.2 mS/cm", "Tỷ lệ chất hữu cơ: 5%", "Độ ẩm bão hòa: 85%",
-            "Tốc độ bay hơi mặt chậu: 0.05 L/day", "Áp suất thẩm thấu rễ: 0.3 MPa", "Độ sâu tầng rễ: 12cm",
-            "Dung tích hấp thu Cation (CEC): 15 meq/100g", "Tốc độ thoát nước: 5ml/min"
-            # ... tiếp tục đến 60 mục
-        ],
-        "Sinh học & Khí hậu (60)": [
-            "Chỉ số diện tích lá (LAI): 1.5", "Tốc độ quang hợp (Pn): 12 µmol CO2/m²s", 
-            "Hiệu suất sử dụng nước (WUE): 0.003", "Mật độ lỗ khí khổng: 150/mm²",
-            "Bức xạ mặt trời (PAR): 450 µmol/m²s", "Điểm bù ánh sáng: 20 µmol/m²s",
-            "Nhiệt độ lá thực tế: 28.5°C", "Tốc độ gió ban công: 1.2m/s", "Độ ẩm tán lá: 72%",
-            "Mức độ bụi bám lá: 5%", "Tỷ lệ hấp thụ UV-B: 45%", "Mức phát thải O2: 0.5g/h"
-            # ... tiếp tục đến 60 mục
-        ],
-        "Logistics & Vận hành (40)": [
-            "Sai số GPS hiện tại: 1.2m", "Tốc độ cập nhật dữ liệu: 1Hz", "Độ ưu tiên bảo trì: Mức 3",
-            "Dự báo ngày cạn nước: 4.5 ngày", "Lượng CO2 đã lọc tích lũy: 125g", "Thời gian nắng trực tiếp: 4h/ngày",
-            "Độ ổn định vị trí: 99%", "Cảnh báo dịch hại: 2%", "Mức độ hài lòng của cây: 85%"
-            # ... tiếp tục đến 40 mục
-        ]
-    }
-    return specs
-
-# --- 4. GIAO DIỆN ---
+# --- 3. LOGIC ĐĂNG NHẬP (CẤU TRÚC CHUẨN) ---
 if 'auth' not in st.session_state: st.session_state.auth = None
 
 if st.session_state.auth is None:
-    # Form đăng nhập đồng nhất lấp đầy màn hình
-    st.markdown('<h1 style="text-align:center;">SYSTEM LOGIN</h1>', unsafe_allow_html=True)
-    with st.container():
-        t1, t2, t3 = st.tabs(["[ LOGIN ]", "[ REGISTER ]", "[ GUEST ]"])
-        with t1:
-            st.text_input("User ID")
-            st.text_input("Access Code", type="password")
-            if st.button("CONNECT"): st.session_state.auth = "admin"; st.rerun()
-        with t2:
-            st.text_input("New ID")
-            st.button("CREATE ACCOUNT")
-        with t3:
-            if st.button("BYPASS (REAL-TIME GPS)"): st.session_state.auth = "guest"; st.rerun()
+    st.markdown('<div class="main-frame">', unsafe_allow_html=True)
+    st.title("🏙️ ECO-MIND: URBAN CORE v25")
+    t1, t2, t3 = st.tabs(["🔐 TRUY CẬP", "📝 ĐĂNG KÝ", "🌍 KHÁCH TỰ DO"])
+    with t1:
+        st.text_input("Tài khoản người dùng")
+        st.text_input("Mật khẩu", type="password")
+        if st.button("KÍCH HOẠT HỆ THỐNG"): st.session_state.auth = "admin"; st.rerun()
+    with t2:
+        st.text_input("Họ và tên")
+        st.text_input("Email liên kết")
+        st.button("TẠO TÀI KHOẢN")
+    with t3:
+        st.info("Chế độ này sử dụng tọa độ GPS thực tế của trình duyệt.")
+        if st.button("VÀO TRỰC TIẾP"): st.session_state.auth = "guest"; st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 else:
-    # Vị trí thực tế (Giả lập GPS thiết bị cập nhật mỗi giây)
+    # GPS Giả lập thời gian thực (Cần kết nối API GPS thật nếu deploy)
     u_lat, u_lon = 21.0285, 105.8542
-    p_lat, p_lon = 21.0290, 105.8545 # Ví dụ sản phẩm cách 50m
+    p_lat, p_lon = 21.0295, 105.8555
 
     with st.sidebar:
-        st.title("NANO-OS v23")
-        menu = option_menu(None, ["Live Nav", "Matrix 200+", "Soul Connect", "Settings"], 
-            icons=['radar', 'grid-3x3-gap', 'activity', 'terminal'], default_index=0)
-        st.write(f"LAT: {u_lat} | LON: {u_lon}")
-        if st.button("DISCONNECT"): st.session_state.auth = None; st.rerun()
+        st.title("ECO-MIND OS")
+        menu = option_menu(None, ["Radar Dẫn đường", "Sức khỏe Cây", "Chat & Nhật ký", "Chợ Tái chế", "Wiki & Cài đặt"], 
+            icons=['compass', 'heart-pulse', 'chat-quote', 'shop', 'gear'], default_index=0)
+        st.divider()
+        st.metric("Khoảng cách", f"{geodesic((u_lat, u_lon), (p_lat, p_lon)).meters:.1f} m")
+        if st.button("Đăng xuất"): st.session_state.auth = None; st.rerun()
 
-    # --- TAB 1: DẪN ĐƯỜNG THỜI GIAN THỰC NỘI BỘ ---
-    if menu == "Live Nav":
-        st.header("📡 INTERNAL RADAR NAVIGATION")
-        fig, dist = get_internal_nav(u_lat, u_lon, p_lat, p_lon)
-        st.plotly_chart(fig, use_container_width=True)
-        st.subheader(f"DISTANCE TO TARGET: {dist:.2f} METERS")
-        st.write("Dữ liệu cập nhật trực tiếp từ hệ thống vệ tinh nội bộ.")
+    # --- TAB 1: RADAR DẪN ĐƯỜNG (INTERNAL) ---
+    if menu == "Radar Dẫn đường":
+        st.header("🧭 Radar Định vị Nano")
+        st.plotly_chart(build_radar_map(u_lat, u_lon, p_lat, p_lon), use_container_width=True)
+        st.success("Hệ thống dẫn đường nội bộ đang hoạt động. Đi theo đường Neon xanh.")
 
-    # --- TAB 2: 200+ CHI TIẾT LI TI (THỰC TẾ) ---
-    elif menu == "Matrix 200+":
-        st.header("🔬 TECHNICAL MATRIX DATA")
-        all_specs = get_matrix_200()
+    # --- TAB 2: SỨC KHỎE CÂY (AI WEATHER) ---
+    elif menu == "Sức khỏe Cây":
+        st.header("📊 Phân tích Sức khỏe (Không cảm biến)")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Bức xạ UV (Dự báo)", "Cao (7/10)")
+        col2.metric("Nước bốc hơi", "150ml/ngày")
+        col3.metric("Dự kiến cạn nước", "3 ngày tới")
         
-        # Hiển thị theo cột với các card nhỏ li ti
-        cols = st.columns(4)
-        for i, (category, items) in enumerate(all_specs.items()):
-            with cols[i]:
-                st.write(f"**{category}**")
-                for item in items:
-                    st.markdown(f'<div class="data-card">{item}</div>', unsafe_allow_html=True)
-
-    # --- TAB 3: TƯƠNG TÁC (CHUYÊN SÂU) ---
-    elif menu == "Soul Connect":
-        st.header("🧠 BIOLOGICAL FEEDBACK")
-        if 'chat' not in st.session_state: st.session_state.chat = []
+        st.markdown("""
+        **🔍 Phân tích AI:**
+        - Vì bạn đặt cây ở hướng Tây, lượng nắng chiều đang làm tăng nhiệt độ chậu nhựa PET.
+        - **Khuyến nghị:** Di chuyển chậu vào sâu trong ban công thêm 20cm để giảm 5°C nhiệt độ đất.
+        """)
         
-        for c in st.session_state.chat:
-            st.write(f"[{c['time']}] {c['user']}: {c['msg']}")
-            
-        inp = st.chat_input("Input command...")
-        if inp:
-            now = datetime.datetime.now().strftime("%H:%M:%S")
-            st.session_state.chat.append({"time": now, "user": "ADMIN", "msg": inp})
-            # Cây phản hồi dựa trên thông số pH và Nhiệt độ
-            res = "STATUS: Optimal. Phốt pho đang hấp thụ tốt ở pH 6.5. Đã lọc 2mg bụi PM2.5 trong 1h qua."
-            st.session_state.chat.append({"time": now, "user": "NANO_UNIT", "msg": res})
-            st.rerun()
+
+    # --- TAB 3: CHAT & NHẬT KÝ ---
+    elif menu == "Chat & Nhật ký":
+        st.header("💬 Tương tác & Nhật ký Eco")
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            st.subheader("Trò chuyện")
+            if 'msgs' not in st.session_state: st.session_state.msgs = []
+            for m in st.session_state.msgs:
+                st.markdown(f'<div class="chat-bubble"><b>{m["u"]}:</b> {m["t"]}</div>', unsafe_allow_html=True)
+            txt = st.chat_input("Nhắn cho cây...")
+            if txt:
+                st.session_state.msgs.append({"u": "Bạn", "t": txt})
+                st.session_state.msgs.append({"u": "Cây", "t": "Mình cảm nhận được nắng đang lên, cảm ơn bạn đã quan tâm!"})
+                st.rerun()
+        with c2:
+            st.subheader("Nhật ký Cây")
+            st.write("📅 *Hôm qua:* Nắng gắt, mình đã lọc được 50mg CO2.")
+            st.write("📅 *Hôm nay:* Trời dịu, mình đang ra thêm 1 mầm nhỏ.")
+
+    # --- TAB 4: CHỢ TÁI CHẾ (NEW FEATURE) ---
+    elif menu == "Chợ Tái chế":
+        st.header("♻️ Cộng đồng Tái chế Thành phố")
+        st.info("Nơi trao đổi vật liệu nâng cấp cho sản phẩm Nano của bạn.")
+        st.table(pd.DataFrame([
+            {"Vật liệu": "Can nhựa HDPE 5L", "Khoảng cách": "500m", "Tình trạng": "Sẵn sàng"},
+            {"Vật liệu": "Lưới lọc nước cũ", "Khoảng cách": "1.2km", "Tình trạng": "Đã đặt chỗ"},
+            {"Vật liệu": "Phân bón hữu cơ ủ tại nhà", "Khoảng cách": "200m", "Tình trạng": "Sẵn sàng"}
+        ]))
+        st.button("Đăng tin trao đổi vật liệu")
+
+    # --- TAB 5: WIKI & CÀI ĐẶT ---
+    elif menu == "Wiki & Cài đặt":
+        st.header("⚙️ Cấu hình Hệ thống")
+        with st.expander("Bách khoa toàn thư Cây Nano"):
+            st.write("Tra cứu cách chăm sóc các loại cây phù hợp với không gian nhỏ.")
+        st.write("**Phiên bản:** Ultimate v25.0")
+        st.write("**Chủ sở hữu:** Admin")
+        if st.button("⚠️ XÓA DỮ LIỆU"): st.rerun()
