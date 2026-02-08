@@ -3,4 +3,4 @@ pandas
 plotly
 streamlit-option-menu
 wikipedia
-requests
+geopy
