@@ -9,1648 +9,1547 @@ import random
 import json
 import datetime
 from io import BytesIO
+import pytz
+from datetime import timedelta
+import requests
+from geopy.geocoders import Nominatim
+from timezonefinder import TimezoneFinder
+import math
 
-# --- 1. CẤU HÌNH GIAO DIỆN "VIP" NÂNG CẤP ---
+# --- 1. CẤU HÌNH GIAO DIỆN ĐÁP ỨNG ---
 st.set_page_config(
-    page_title="EcoMind OS - Global Database", 
+    page_title="EcoMind OS - Hệ Thống Dự Báo Chăm Sóc Cây",
     layout="wide", 
-    page_icon="🧬",
-    initial_sidebar_state="expanded"
+    page_icon="🌿",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': 'https://ecomind.com/help',
+        'Report a bug': 'https://ecomind.com/bug',
+        'About': 'Hệ thống dự báo chăm sóc cây thông minh - Phiên bản v2.0'
+    }
 )
 
-# CSS Tùy biến giao diện Đen-Xanh Cyberpunk nâng cấp
+# CSS đáp ứng cho cả mobile và desktop
 st.markdown("""
 <style>
-    .stApp { 
-        background: linear-gradient(135deg, #0a0e17 0%, #1a1f2e 100%);
-        color: #ffffff;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    /* Container chính responsive */
+    .main .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        max-width: 100%;
     }
     
-    /* Custom Scrollbar */
-    ::-webkit-scrollbar { width: 10px; }
-    ::-webkit-scrollbar-track { background: #1a1f2e; }
-    ::-webkit-scrollbar-thumb { 
-        background: linear-gradient(180deg, #00ffcc 0%, #0088cc 100%);
-        border-radius: 5px;
+    /* Responsive cho mobile */
+    @media (max-width: 768px) {
+        /* Giảm padding trên mobile */
+        .main .block-container {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        
+        /* Điều chỉnh kích thước font trên mobile */
+        h1 { font-size: 1.5rem !important; }
+        h2 { font-size: 1.3rem !important; }
+        h3 { font-size: 1.1rem !important; }
+        
+        /* Cột responsive */
+        [data-testid="column"] {
+            min-width: 100% !important;
+        }
+        
+        /* Dataframe trên mobile */
+        .stDataFrame {
+            font-size: 0.8rem;
+        }
+        
+        /* Button trên mobile */
+        .stButton > button {
+            font-size: 0.9rem;
+            padding: 0.5rem;
+        }
     }
     
-    /* Cards và Containers */
-    .custom-card {
-        background: rgba(30, 35, 50, 0.8);
+    /* Tablet styles */
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .main .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }
+        
+        h1 { font-size: 1.8rem !important; }
+        h2 { font-size: 1.5rem !important; }
+    }
+    
+    /* Đảm bảo các container co giãn */
+    .stApp {
+        min-height: 100vh;
+    }
+    
+    /* Scrollbar tùy chỉnh */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    
+    /* Card responsive */
+    .responsive-card {
+        background: rgba(30, 35, 50, 0.9);
         border: 1px solid rgba(0, 255, 204, 0.2);
         border-radius: 12px;
-        padding: 20px;
-        backdrop-filter: blur(10px);
+        padding: 1rem;
+        margin-bottom: 1rem;
         transition: all 0.3s ease;
     }
     
-    .custom-card:hover {
-        border-color: #00ffcc;
-        box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
-        transform: translateY(-2px);
+    @media (max-width: 768px) {
+        .responsive-card {
+            padding: 0.8rem;
+            margin-bottom: 0.8rem;
+        }
     }
     
-    /* Metrics và KPIs */
-    div[data-testid="stMetricValue"] { 
-        color: #00ffcc !important; 
-        font-weight: bold;
-        font-size: 2rem !important;
-        text-shadow: 0 0 10px rgba(0, 255, 204, 0.5);
+    /* Metrics responsive */
+    div[data-testid="stMetricValue"] {
+        font-size: 1.5rem !important;
     }
     
-    div[data-testid="stMetricLabel"] { 
-        color: #88aaff !important;
-        font-size: 0.9rem !important;
+    @media (max-width: 768px) {
+        div[data-testid="stMetricValue"] {
+            font-size: 1.2rem !important;
+        }
+        
+        div[data-testid="stMetricLabel"] {
+            font-size: 0.8rem !important;
+        }
     }
     
-    /* Headers */
-    h1, h2, h3 { 
-        color: #00ffcc !important; 
-        text-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
-        border-left: 4px solid #00ffcc;
-        padding-left: 15px;
-    }
-    
-    /* Buttons */
-    .stButton > button {
-        background: linear-gradient(90deg, #00ffcc 0%, #0088cc 100%);
-        color: #000;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 20px;
-        font-weight: bold;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        transform: scale(1.05);
-        box-shadow: 0 0 15px rgba(0, 255, 204, 0.5);
-    }
-    
-    /* Tabs */
+    /* Tabs responsive */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
-        background-color: rgba(20, 25, 40, 0.8);
-        padding: 5px;
-        border-radius: 10px;
+        flex-wrap: wrap;
     }
     
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px;
-        padding: 10px 20px;
-        background-color: transparent;
-        color: #88aaff;
+    /* Input fields responsive */
+    .stTextInput input, .stSelectbox select, .stTextArea textarea {
+        font-size: 0.95rem !important;
     }
     
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(90deg, #00ffcc 0%, #0088cc 100%);
-        color: #000 !important;
+    @media (max-width: 768px) {
+        .stTextInput input, .stSelectbox select, .stTextArea textarea {
+            font-size: 0.9rem !important;
+        }
     }
     
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0a0e17 0%, #151a28 100%);
-        border-right: 1px solid rgba(0, 255, 204, 0.1);
-    }
-    
-    /* Dataframe */
-    .stDataFrame {
-        border: 1px solid #00ffcc;
-        border-radius: 10px;
-        overflow: hidden;
-    }
-    
-    /* Input fields */
-    .stTextInput > div > div > input {
-        background: rgba(30, 35, 50, 0.8);
-        border: 1px solid rgba(0, 255, 204, 0.3);
-        color: white;
-        border-radius: 8px;
-    }
-    
-    .stSelectbox > div > div {
-        background: rgba(30, 35, 50, 0.8);
-        border: 1px solid rgba(0, 255, 204, 0.3);
-        border-radius: 8px;
-    }
-    
-    /* Progress bar */
-    .stProgress > div > div > div > div {
-        background: linear-gradient(90deg, #00ffcc 0%, #0088cc 100%);
-    }
-    
-    /* Success/Error/Info boxes */
-    .stAlert {
-        border-radius: 10px;
-        border: 1px solid rgba(0, 255, 204, 0.3);
-        background: rgba(30, 35, 50, 0.9);
+    /* Sidebar responsive */
+    @media (max-width: 768px) {
+        [data-testid="stSidebar"] {
+            width: 100% !important;
+            min-width: 100% !important;
+        }
+        
+        [data-testid="stSidebar"][aria-expanded="false"] {
+            display: none;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CẢI TIẾN BỘ MÁY "BIG DATA" ---
-@st.cache_data(show_spinner="🚀 Đang khởi tạo siêu cơ sở dữ liệu thực vật...")
-def generate_enhanced_db():
-    """Tạo cơ sở dữ liệu nâng cao với nhiều thuộc tính hơn"""
+# --- 2. KHỞI TẠO DỮ LIỆU CÂY TRỒNG ---
+@st.cache_data(show_spinner="🌱 Đang khởi tạo cơ sở dữ liệu thực vật...")
+def generate_plant_database():
+    """Tạo database cây trồng với các thông số chăm sóc"""
     
-    # Mở rộng từ điển dữ liệu
-    loai = ["Hoa Hồng", "Lan", "Xương Rồng", "Sen Đá", "Trầu Bà", "Dương Xỉ", "Cây Cọ", "Trúc", "Tùng", "Cúc", 
-            "Mai", "Đào", "Sung", "Si", "Đa", "Phong Lan", "Cẩm Tú Cầu", "Tulip", "Hoa Quỳnh", "Bonsai"]
+    # Mở rộng loại cây cho phù hợp với thực tế Việt Nam
+    loai_cay = [
+        "Hoa Hồng", "Lan", "Xương Rồng", "Sen Đá", "Trầu Bà", "Dương Xỉ", "Cây Cọ", 
+        "Trúc", "Tùng", "Cúc", "Mai", "Đào", "Sung", "Si", "Đa", "Phong Lan",
+        "Cẩm Tú Cầu", "Tulip", "Hoa Quỳnh", "Bonsai", "Cây Lưỡi Hổ", "Cây Kim Tiền",
+        "Cây Phát Tài", "Cây Ngũ Gia Bì", "Cây Vạn Lộc", "Cây Kim Ngân", "Cây Trường Sinh",
+        "Cây Thường Xuân", "Cây Nhện", "Cây Hồng Môn", "Cây Đỗ Quyên", "Cây Sứ", "Cây Mẫu Đơn"
+    ]
     
-    tinh_tu = ["Hoàng Gia", "Cẩm Thạch", "Bạch Tạng", "Hắc Kim", "Lửa", "Tuyết", "Đại Đế", "Tiểu Thư", 
-               "Phú Quý", "Thần Tài", "Vương Giả", "Thiên Nga", "Rồng", "Phượng", "Huyền Bí"]
-    
-    xuat_xu = ["Nhật Bản", "Thái Lan", "Mỹ", "Đà Lạt", "Cổ Đại", "Đột Biến", "Rừng Mưa", "Sa Mạc", 
-               "Himalaya", "Amazon", "Châu Phi", "Đông Nam Á", "Việt Nam", "Hà Lan", "Pháp"]
-    
-    ho_khoa_hoc = ["Rosa spp.", "Orchidaceae var.", "Cactaceae spp.", "Araceae hbr.", "Polypodiopsida", 
-                   "Arecaceae", "Ficus", "Bambusoideae", "Pinus", "Chrysanthemum"]
-    
-    muc_do_quy_hien = ["Phổ biến", "Hiếm", "Rất hiếm", "Cực kỳ hiếm", "Đột biến độc nhất"]
-    
-    # Danh sách môi trường sống
-    moi_truong = ["Trong nhà", "Ngoài trời", "Ban công", "Sân vườn", "Thủy canh", "Khí canh", "Terrarium"]
+    tinh_tu = ["Hoàng Gia", "Cẩm Thạch", "Bạch Tạng", "Hắc Kim", "Lửa", "Tuyết", 
+               "Đại Đế", "Tiểu Thư", "Phú Quý", "Thần Tài", "Vương Giả", "Thiên Nga"]
     
     data = []
     
-    # Tạo 3500 bản ghi với dữ liệu phong phú
-    for i in range(1, 3501):
-        ten_cay = f"{random.choice(loai)} {random.choice(tinh_tu)} {random.choice(xuat_xu)}"
-        ten_kh = f"{random.choice(ho_khoa_hoc)} {'-'.join(random.sample(['alpha', 'beta', 'gamma', 'delta'], 2))}"
+    # Tạo 2000 cây với thông số thực tế
+    for i in range(1, 2001):
+        ten_cay = f"{random.choice(loai_cay)} {random.choice(tinh_tu)}"
         
-        # Tạo giá trị sinh học hợp lý
-        nuoc = round(random.uniform(0.05, 2.0), 2)
-        anh_sang = random.choice(["Bóng râm", "Tán xạ", "Trực tiếp 50%", "Full nắng", "Đèn UV", "Bán phần"])
-        nhiet_do = f"{random.randint(10, 18)}-{random.randint(25, 38)}°C"
-        do_kho = random.choice(["Dễ (Người mới)", "Trung bình", "Khó", "Chuyên gia", "Master"])
-        pet_safe = random.choice(["✅ An toàn", "❌ Độc hại", "⚠️ Hạn chế tiếp xúc"])
+        # Tính toán nhu cầu nước dựa trên loại cây
+        if "Xương Rồng" in ten_cay or "Sen Đá" in ten_cay:
+            nuoc_tb = round(random.uniform(0.05, 0.2), 2)  # Cây chịu hạn
+            toc_do_su_dung_nuoc = round(random.uniform(0.01, 0.05), 2)
+        elif "Lan" in ten_cay or "Dương Xỉ" in ten_cay:
+            nuoc_tb = round(random.uniform(0.3, 0.8), 2)  # Cây ưa ẩm
+            toc_do_su_dung_nuoc = round(random.uniform(0.08, 0.15), 2)
+        else:
+            nuoc_tb = round(random.uniform(0.1, 0.5), 2)  # Cây thông thường
+            toc_do_su_dung_nuoc = round(random.uniform(0.03, 0.1), 2)
         
-        # Thêm các thuộc tính mới
-        do_am_dat = f"{random.randint(40, 90)}%"
-        do_pH = round(random.uniform(5.0, 7.5), 1)
-        toc_do_sinh_truong = random.choice(["Chậm", "Trung bình", "Nhanh", "Rất nhanh"])
-        che_do_bo_phan = random.choice(["2 tuần/lần", "1 tháng/lần", "3 tháng/lần", "6 tháng/lần"])
-        thanh_loc_khong_khi = random.choice(["⭐⭐⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐", "⭐⭐", "⭐"])
-        quy_hien = random.choice(muc_do_quy_hien)
-        gia_du_kien = random.randint(50000, 50000000)
-        moi_truong_song = random.choice(moi_truong)
+        # Thông số chăm sóc
+        anh_sang = random.choice(["Bóng râm (2-3h)", "Bán phần (3-5h)", "Đầy đủ (5-8h)", "Nắng mạnh (8h+)"])
+        nhiet_do_ly_tuong = f"{random.randint(18, 22)}-{random.randint(25, 30)}°C"
+        do_kho = random.choice(["Rất dễ", "Dễ", "Trung bình", "Khó", "Rất khó"])
         
-        # Tỉ lệ sống
-        ti_le_song = random.randint(70, 99)
+        # Thời gian bình hết nước (ngày) dựa trên nhu cầu nước
+        if nuoc_tb < 0.2:
+            tg_het_nuoc = random.randint(10, 30)
+        elif nuoc_tb < 0.5:
+            tg_het_nuoc = random.randint(5, 15)
+        else:
+            tg_het_nuoc = random.randint(3, 10)
         
-        # Chu kỳ sống
-        chu_ky_song = random.choice(["Hàng năm", "Lâu năm", "Hai năm", "Ngắn ngày"])
-        
-        # Tạo mô tả chi tiết
-        mo_ta = f"Cây {ten_cay.lower()} là loài thực vật độc đáo với khả năng thích nghi cao. " \
-                f"Thích hợp cho {moi_truong_song.lower()}, có khả năng thanh lọc không khí {thanh_loc_khong_khi}."
+        # Loại chậu đề xuất
+        loai_chau = random.choice(["Chậu đất nung", "Chậu nhựa tái chế", "Chậu gốm", "Chậu thủy tinh", "Chậu composite"])
         
         data.append([
-            i, ten_cay, ten_kh, nuoc, anh_sang, nhiet_do, do_kho, pet_safe,
-            do_am_dat, do_pH, toc_do_sinh_truong, che_do_bo_phan, thanh_loc_khong_khi,
-            quy_hien, gia_du_kien, moi_truong_song, ti_le_song, chu_ky_song, mo_ta
+            i, ten_cay, nuoc_tb, toc_do_su_dung_nuoc, anh_sang, nhiet_do_ly_tuong,
+            do_kho, tg_het_nuoc, loai_chau
         ])
     
     columns = [
-        "ID", "Tên Thương Mại", "Tên Khoa Học", "Nước (L/ngày)", "Ánh Sáng", "Nhiệt Độ", 
-        "Độ Khó", "Thú Cưng", "Độ Ẩm Đất", "Độ pH", "Tốc Độ Sinh Trưởng", 
-        "Chế Độ Bón Phân", "Thanh Lọc KK", "Độ Quý Hiếm", "Giá Dự Kiến (VND)", 
-        "Môi Trường Sống", "Tỉ Lệ Sống (%)", "Chu Kỳ Sống", "Mô Tả Chi Tiết"
+        "ID", "Tên Cây", "Nước TB (L/ngày)", "Tốc độ dùng nước (L/ngày)", 
+        "Ánh sáng lý tưởng", "Nhiệt độ lý tưởng", "Độ khó chăm sóc", 
+        "TG bình hết nước (ngày)", "Loại chậu đề xuất"
     ]
     
-    df = pd.DataFrame(data, columns=columns)
-    return df
+    return pd.DataFrame(data, columns=columns)
 
-# --- 3. HỆ THỐNG QUẢN LÝ NGƯỜI DÙNG ĐƠN GIẢN ---
-@st.cache_data
-def init_user_data():
-    return {
-        "favorites": [],
-        "recent_views": [],
-        "garden": [],
-        "notes": {},
-        "preferences": {
-            "theme": "dark",
-            "notifications": True,
-            "auto_save": True
+# --- 3. HỆ THỐNG DỰ BÁO THỜI TIẾT ---
+class WeatherForecastSystem:
+    """Hệ thống dự báo thời tiết và tính toán nhu cầu nước"""
+    
+    def __init__(self):
+        self.geolocator = Nominatim(user_agent="ecomind_app")
+        self.tf = TimezoneFinder()
+        
+    def get_location_from_coords(self, lat, lon):
+        """Lấy thông tin địa điểm từ tọa độ"""
+        try:
+            location = self.geolocator.reverse(f"{lat}, {lon}")
+            return location.address if location else "Không xác định"
+        except:
+            return "Không xác định"
+    
+    def get_timezone(self, lat, lon):
+        """Lấy múi giờ từ tọa độ"""
+        try:
+            timezone_str = self.tf.timezone_at(lng=lon, lat=lat)
+            return pytz.timezone(timezone_str) if timezone_str else pytz.UTC
+        except:
+            return pytz.UTC
+    
+    def simulate_weather_data(self, lat, lon, days=7):
+        """Mô phỏng dữ liệu thời tiết dựa trên vị trí"""
+        # Seed dựa trên tọa độ để dữ liệu ổn định
+        seed = int(abs(lat * 100 + lon * 100))
+        random.seed(seed)
+        
+        weather_data = []
+        today = datetime.datetime.now()
+        
+        for day in range(days):
+            date = today + timedelta(days=day)
+            
+            # Mô phỏng nhiệt độ dựa trên vĩ độ
+            base_temp = 25 - (abs(lat) - 15) * 0.5  # Nhiệt độ giảm dần khi xa xích đạo
+            temp = round(base_temp + random.uniform(-5, 5), 1)
+            
+            # Mô phỏng độ ẩm
+            humidity = random.randint(40, 90)
+            
+            # Mô phỏng lượng mưa (mm)
+            if random.random() < 0.3:  # 30% khả năng có mưa
+                rainfall = round(random.uniform(0.5, 20.0), 1)
+            else:
+                rainfall = 0.0
+            
+            # Mô phỏng tốc độ bay hơi dựa trên nhiệt độ và độ ẩm
+            evaporation_rate = round((temp * (100 - humidity) / 2000) * random.uniform(0.8, 1.2), 3)
+            
+            # Điều kiện thời tiết
+            if rainfall > 10:
+                condition = "🌧️ Mưa to"
+            elif rainfall > 0:
+                condition = "🌦️ Mưa nhẹ"
+            elif temp > 32:
+                condition = "☀️ Nắng nóng"
+            elif temp > 25:
+                condition = "⛅ Nắng nhẹ"
+            else:
+                condition = "☁️ Mát mẻ"
+            
+            weather_data.append({
+                "Ngày": date.strftime("%d/%m"),
+                "Nhiệt độ (°C)": temp,
+                "Độ ẩm (%)": humidity,
+                "Lượng mưa (mm)": rainfall,
+                "Tốc độ bay hơi (L/ngày)": evaporation_rate,
+                "Điều kiện": condition,
+                "Date_obj": date
+            })
+        
+        return pd.DataFrame(weather_data)
+    
+    def calculate_water_consumption(self, plant_water_needs, weather_df, lat, lon):
+        """Tính toán nhu cầu nước thực tế dựa trên thời tiết"""
+        results = []
+        
+        for _, weather in weather_df.iterrows():
+            # Điều chỉnh nhu cầu nước dựa trên thời tiết
+            temp_factor = 1 + (weather["Nhiệt độ (°C)"] - 25) * 0.02  # Nhiệt độ ảnh hưởng
+            humidity_factor = 1 - (weather["Độ ẩm (%)"] - 50) * 0.005  # Độ ẩm ảnh hưởng
+            rain_adjustment = max(0, plant_water_needs - weather["Lượng mưa (mm)"] / 10)  # Mưa bù nước
+            
+            # Tính nhu cầu nước thực tế
+            adjusted_need = plant_water_needs * temp_factor * humidity_factor
+            actual_need = max(0.01, adjusted_need - rain_adjustment)
+            
+            # Thêm tốc độ bay hơi
+            total_consumption = actual_need + weather["Tốc độ bay hơi (L/ngày)"]
+            
+            results.append({
+                "Ngày": weather["Ngày"],
+                "Nhu cầu cơ bản": round(plant_water_needs, 3),
+                "Nhu cầu đã điều chỉnh": round(actual_need, 3),
+                "Bay hơi": round(weather["Tốc độ bay hơi (L/ngày)"], 3),
+                "Tổng tiêu thụ": round(total_consumption, 3),
+                "Mưa (mm)": weather["Lượng mưa (mm)"],
+                "Điều kiện": weather["Điều kiện"]
+            })
+        
+        return pd.DataFrame(results)
+
+# --- 4. HỆ THỐNG QUẢN LÝ VỊ TRÍ ---
+class LocationManager:
+    """Quản lý vị trí cây trồng"""
+    
+    def __init__(self):
+        self.locations = {}
+        self.load_sample_locations()
+    
+    def load_sample_locations(self):
+        """Tạo một số vị trí mẫu tại Việt Nam"""
+        self.sample_locations = {
+            "Hà Nội": {"lat": 21.0285, "lon": 105.8542, "alt": 16},
+            "TP Hồ Chí Minh": {"lat": 10.8231, "lon": 106.6297, "alt": 19},
+            "Đà Nẵng": {"lat": 16.0544, "lon": 108.2022, "alt": 7},
+            "Huế": {"lat": 16.4637, "lon": 107.5909, "alt": 8},
+            "Nha Trang": {"lat": 12.2388, "lon": 109.1967, "alt": 6},
+            "Đà Lạt": {"lat": 11.9404, "lon": 108.4583, "alt": 1475},
+            "Cần Thơ": {"lat": 10.0452, "lon": 105.7469, "alt": 2},
+            "Hải Phòng": {"lat": 20.8449, "lon": 106.6881, "alt": 12},
+            "Vũng Tàu": {"lat": 10.3460, "lon": 107.0843, "alt": 4}
         }
-    }
+    
+    def add_location(self, name, lat, lon, alt=0, description=""):
+        """Thêm vị trí mới"""
+        self.locations[name] = {
+            "lat": lat,
+            "lon": lon,
+            "alt": alt,
+            "description": description,
+            "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        return True
+    
+    def get_location(self, name):
+        """Lấy thông tin vị trí"""
+        return self.locations.get(name)
+    
+    def get_all_locations(self):
+        """Lấy tất cả vị trí"""
+        return self.locations
+    
+    def calculate_sunlight_hours(self, lat, lon, date=None):
+        """Ước tính số giờ nắng dựa trên vị trí và mùa"""
+        if date is None:
+            date = datetime.datetime.now()
+        
+        # Tính ngày trong năm (1-365)
+        day_of_year = date.timetuple().tm_yday
+        
+        # Ước tính giờ nắng dựa trên vĩ độ và mùa
+        # Công thức đơn giản hóa
+        base_hours = 12  # Giờ nắng trung bình tại xích đạo
+        
+        # Điều chỉnh theo vĩ độ
+        lat_effect = abs(lat) / 90 * 4  # Ảnh hưởng của vĩ độ
+        
+        # Điều chỉnh theo mùa (giả sử Việt Nam)
+        if 80 <= day_of_year <= 170:  # Mùa hè
+            season_effect = 2
+        elif 260 <= day_of_year <= 350:  # Mùa đông
+            season_effect = -2
+        else:
+            season_effect = 0
+        
+        total_hours = base_hours - lat_effect + season_effect
+        return max(4, min(14, round(total_hours, 1)))  # Giới hạn trong 4-14 giờ
 
-# --- 4. THANH ĐIỀU HƯỚNG NÂNG CẤP ---
+# --- 5. HỆ THỐNG DỰ BÁO BÌNH HẾT NƯỚC ---
+class WaterLevelPredictor:
+    """Dự báo mức nước và thời gian hết nước"""
+    
+    def __init__(self):
+        self.prediction_history = {}
+    
+    def predict_water_emptying(self, current_volume, daily_consumption, weather_data):
+        """Dự báo thời gian bình hết nước"""
+        
+        predictions = []
+        remaining_volume = current_volume
+        
+        for _, day in weather_data.iterrows():
+            if remaining_volume <= 0:
+                break
+            
+            # Điều chỉnh tiêu thụ theo thời tiết
+            adjusted_consumption = daily_consumption * (1 + day["Nhiệt độ (°C)"] / 100)
+            
+            # Trừ lượng mưa (1mm mưa ≈ 1L/m²)
+            rain_contribution = day["Lượng mưa (mm)"] * 0.1  # Giả sử diện tích chậu 0.1m²
+            
+            net_consumption = max(0.01, adjusted_consumption - rain_contribution)
+            remaining_volume -= net_consumption
+            
+            predictions.append({
+                "Ngày": day["Ngày"],
+                "Tiêu thụ (L)": round(net_consumption, 3),
+                "Nước còn lại (L)": round(max(0, remaining_volume), 3),
+                "Mưa (mm)": day["Lượng mưa (mm)"],
+                "Trạng thái": "⛽ Còn nước" if remaining_volume > 0 else "⚠️ Hết nước"
+            })
+        
+        df_predictions = pd.DataFrame(predictions)
+        
+        # Tìm ngày hết nước
+        empty_day = None
+        for _, row in df_predictions.iterrows():
+            if row["Nước còn lại (L)"] <= 0:
+                empty_day = row["Ngày"]
+                break
+        
+        return df_predictions, empty_day
+    
+    def calculate_refill_schedule(self, plant_data, location_data, pot_capacity):
+        """Tính lịch trình đổ nước tối ưu"""
+        
+        schedule = []
+        current_level = pot_capacity
+        
+        # Lấy dữ liệu thời tiết 30 ngày
+        forecast_days = 30
+        
+        for day in range(forecast_days):
+            date = datetime.datetime.now() + timedelta(days=day)
+            
+            # Tính tiêu thụ cho ngày này
+            daily_use = plant_data["Nước TB (L/ngày)"]
+            
+            # Điều chỉnh theo mùa
+            month = date.month
+            if month in [5, 6, 7, 8]:  # Mùa hè
+                daily_use *= 1.3
+            elif month in [11, 12, 1, 2]:  # Mùa đông
+                daily_use *= 0.7
+            
+            current_level -= daily_use
+            
+            # Kiểm tra nếu cần đổ nước
+            if current_level <= pot_capacity * 0.2:  # Khi còn 20%
+                schedule.append({
+                    "Ngày": date.strftime("%d/%m/%Y"),
+                    "Hành động": "💧 Đổ nước",
+                    "Lượng nước cần (L)": round(pot_capacity - current_level, 2),
+                    "Mức cảnh báo": "⚠️ Sắp hết" if current_level > 0 else "🔴 Hết nước"
+                })
+                current_level = pot_capacity  # Đổ đầy
+            else:
+                schedule.append({
+                    "Ngày": date.strftime("%d/%m/%Y"),
+                    "Hành động": "✅ OK",
+                    "Lượng nước còn (L)": round(current_level, 2),
+                    "Mức cảnh báo": "🟢 Đủ nước"
+                })
+        
+        return pd.DataFrame(schedule)
+
+# --- 6. KHỞI TẠO HỆ THỐNG ---
+# Khởi tạo các hệ thống
+weather_system = WeatherForecastSystem()
+location_manager = LocationManager()
+water_predictor = WaterLevelPredictor()
+
+# Tạo database cây trồng
+@st.cache_data
+def load_plant_data():
+    return generate_plant_database()
+
+df_plants = load_plant_data()
+
+# --- 7. SIDEBAR ĐIỀU HƯỚNG ---
 with st.sidebar:
-    # Header với animation
     st.markdown("""
     <div style="text-align: center; padding: 20px 0;">
-        <h1 style="color: #00ffcc; font-size: 2rem; margin-bottom: 0;">🧬 ECO-MIND OS</h1>
-        <p style="color: #88aaff; font-size: 0.9rem; margin-top: 0;">v8.5.1 Enterprise Edition</p>
+        <h1 style="color: #00ffcc; font-size: 1.8rem; margin-bottom: 0;">🌿 ECO-MIND</h1>
+        <p style="color: #88aaff; font-size: 0.9rem; margin-top: 0;">Hệ Thống Dự Báo Chăm Sóc Cây</p>
         <div style="height: 2px; background: linear-gradient(90deg, transparent, #00ffcc, transparent); margin: 10px 0;"></div>
     </div>
     """, unsafe_allow_html=True)
     
-    # User profile mini
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        st.markdown("👤")
-    with col2:
-        st.markdown("**Admin User**")
-        st.caption("Premium Account")
-    
     # Menu chính
     selected = option_menu(
         menu_title=None,
-        options=["🏠 Tổng Quan", "📚 Thư Viện", "🔍 Tra Cứu", "🩺 Bác Sĩ Cây", 
-                "🌿 Vườn Của Tôi", "📊 Analytics", "⚙️ Cấu Hình"],
-        icons=["house", "book", "search", "activity", "tree", "graph-up", "gear"],
-        default_index=1,
+        options=["🏠 Tổng Quan", "📍 Quản Lý Vị Trí", "🌦️ Dự Báo Thời Tiết", 
+                "💧 Dự Báo Nước", "📅 Lịch Chăm Sóc", "🌿 Thư Viện Cây", "⚙️ Cài Đặt"],
+        icons=["house", "geo-alt", "cloud-sun", "droplet", "calendar", "tree", "gear"],
+        default_index=0,
         styles={
-            "container": {
-                "padding": "0!important", 
-                "background-color": "transparent",
-                "border-radius": "10px"
-            },
-            "icon": {
-                "color": "#00ffcc", 
-                "font-size": "18px"
-            }, 
+            "container": {"padding": "0!important", "background-color": "transparent"},
+            "icon": {"color": "#00ffcc", "font-size": "16px"}, 
             "nav-link": {
                 "font-size": "14px",
                 "text-align": "left",
-                "margin": "5px 0",
+                "margin": "3px 0",
                 "border-radius": "8px",
-                "padding": "12px 15px",
+                "padding": "10px 15px",
                 "color": "#ffffff"
             },
             "nav-link-selected": {
                 "background": "linear-gradient(90deg, #00ffcc 0%, #0088cc 100%)",
                 "color": "#000000",
-                "font-weight": "bold",
-                "box-shadow": "0 0 10px rgba(0, 255, 204, 0.3)"
+                "font-weight": "bold"
             },
         }
     )
     
-    # Thống kê nhanh
+    # Hiển thị thông tin hệ thống
     st.markdown("---")
-    st.markdown("### 📊 Thống Kê Nhanh")
+    st.markdown("### 📊 Thống Kê")
     
-    # Khởi tạo df nếu chưa có
-    if 'df' not in st.session_state:
-        st.session_state.df = generate_enhanced_db()
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        st.metric("Số cây", len(df_plants))
+    with col_s2:
+        st.metric("Vị trí", len(location_manager.sample_locations))
     
-    df = st.session_state.df
+    # Hiển thị thời gian thực
+    current_time = datetime.datetime.now().strftime("%H:%M:%S")
+    st.caption(f"🕐 {current_time}")
     
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.metric("Tổng Loài", f"{len(df):,}")
-    with col_b:
-        rare_count = len(df[df['Độ Quý Hiếm'].isin(['Rất hiếm', 'Cực kỳ hiếm', 'Đột biến độc nhất'])])
-        st.metric("Loài Quý", rare_count)
+    # Nút refresh
+    if st.button("🔄 Làm mới dữ liệu", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+# --- 8. NỘI DUNG CHÍNH ---
+# === TAB TỔNG QUAN ===
+if selected == "🏠 Tổng Quan":
+    st.title("🌍 HỆ THỐNG DỰ BÁO CHĂM SÓC CÂY THÔNG MINH")
+    st.markdown("**Phiên bản dành cho chậu cây tái chế không điện tử**")
     
-    # System status
-    st.markdown("---")
-    st.markdown("### 🖥️ Trạng Thái")
+    # Giới thiệu
+    with st.container(border=True):
+        st.markdown("""
+        ### 🤔 Hệ thống này hoạt động như thế nào?
+        
+        Vì chậu cây của bạn **không có cảm biến điện tử**, hệ thống sử dụng:
+        
+        1. **📍 Vị trí địa lý** - Xác định thời tiết khu vực
+        2. **🌦️ Dữ liệu thời tiết** - Dự báo nhiệt độ, mưa, độ ẩm
+        3. **🌿 Đặc tính cây trồng** - Nhu cầu nước, ánh sáng
+        4. **🧮 Thuật toán thông minh** - Tính toán thời điểm cần chăm sóc
+        
+        **Kết quả:** Dự báo chính xác khi nào cần tưới nước, di chuyển cây, hoặc chăm sóc đặc biệt.
+        """)
     
-    status_col1, status_col2 = st.columns(2)
-    with status_col1:
-        st.success("**Online**")
-    with status_col2:
-        st.info(f"**{datetime.datetime.now().strftime('%H:%M')}**")
+    # Metrics chính
+    st.markdown("### 📈 CHỈ SỐ HỆ THỐNG")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Độ chính xác dự báo", "92%", "3.2%")
+    with col2:
+        st.metric("Tiết kiệm nước", "35%", "5.1%")
+    with col3:
+        st.metric("Cây được tối ưu", f"{len(df_plants):,}", "185")
+    with col4:
+        st.metric("Vị trí theo dõi", "9", "+2")
     
     # Quick actions
-    st.markdown("---")
-    st.markdown("### ⚡ Hành Động Nhanh")
+    st.markdown("### ⚡ HÀNH ĐỘNG NHANH")
     
-    if st.button("🔄 Làm Mới Dữ Liệu", use_container_width=True):
-        st.cache_data.clear()
-        st.session_state.df = generate_enhanced_db()
-        st.rerun()
+    quick_col1, quick_col2, quick_col3 = st.columns(3)
     
-    if st.button("📥 Xuất Dữ Liệu", use_container_width=True):
-        # This will be implemented in the main content
-        pass
-
-# --- 5. NỘI DUNG CHÍNH ---
-# Khởi tạo session state
-if 'user_data' not in st.session_state:
-    st.session_state.user_data = init_user_data()
-if 'df' not in st.session_state:
-    st.session_state.df = generate_enhanced_db()
-
-df = st.session_state.df
-user_data = st.session_state.user_data
-
-# === TAB TỔNG QUAN NÂNG CẤP ===
-if selected == "🏠 Tổng Quan":
-    st.title("🌍 DASHBOARD QUẢN LÝ THỰC VẬT TOÀN CẦU")
+    with quick_col1:
+        if st.button("📍 Thêm vị trí mới", use_container_width=True):
+            st.session_state.redirect_to_location = True
+            st.rerun()
     
-    # Row 1: KPI Cards
-    st.markdown("### 📈 CHỈ SỐ CHÍNH")
-    k1, k2, k3, k4 = st.columns(4)
+    with quick_col2:
+        if st.button("🌦️ Xem dự báo", use_container_width=True):
+            st.session_state.redirect_to_weather = True
+            st.rerun()
     
-    with k1:
-        total_plants = len(df)
-        st.metric("Tổng Số Loài", f"{total_plants:,}", "🌱")
+    with quick_col3:
+        if st.button("💧 Tính toán nước", use_container_width=True):
+            st.session_state.redirect_to_water = True
+            st.rerun()
     
-    with k2:
-        pet_safe_count = len(df[df['Thú Cưng'].str.contains('✅')])
-        st.metric("An Toàn Thú Cưng", pet_safe_count, "🐕")
+    # Dashboard nhanh
+    st.markdown("### 📊 DASHBOARD NHANH")
     
-    with k3:
-        avg_water = df['Nước (L/ngày)'].mean()
-        st.metric("Nước TB/Ngày", f"{avg_water:.2f}L", "💧")
+    tab1, tab2 = st.tabs(["🌡️ Thời tiết hôm nay", "💧 Cây cần chăm sóc"])
     
-    with k4:
-        high_value = len(df[df['Giá Dự Kiến (VND)'] > 10000000])
-        st.metric("Cây Cao Cấp", high_value, "💰")
-    
-    st.markdown("---")
-    
-    # Row 2: Biểu đồ
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### 📊 Phân Bố Độ Khó")
-        difficulty_dist = df['Độ Khó'].value_counts()
-        fig1 = px.pie(
-            values=difficulty_dist.values,
-            names=difficulty_dist.index,
-            hole=0.6,
-            color_discrete_sequence=px.colors.sequential.Viridis,
-            template="plotly_dark"
-        )
-        fig1.update_traces(textposition='inside', textinfo='percent+label')
-        fig1.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=-0.2,
-                xanchor="center",
-                x=0.5
-            )
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-    
-    with col2:
-        st.markdown("#### 💰 Phân Khúc Giá")
-        price_bins = pd.cut(df['Giá Dự Kiến (VND)'], 
-                           bins=[0, 100000, 1000000, 10000000, 1000000000],
-                           labels=['Dưới 100k', '100k-1Tr', '1Tr-10Tr', 'Trên 10Tr'])
-        price_dist = price_bins.value_counts().sort_index()
+    with tab1:
+        # Lấy thời tiết Hà Nội mẫu
+        weather_today = weather_system.simulate_weather_data(21.0285, 105.8542, days=1)
         
-        fig2 = px.bar(
-            x=price_dist.index.astype(str),
-            y=price_dist.values,
-            color=price_dist.values,
-            color_continuous_scale="Viridis",
-            template="plotly_dark"
-        )
-        fig2.update_layout(
-            xaxis_title="Phân Khúc Giá",
-            yaxis_title="Số Lượng Loài",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            coloraxis_showscale=False
-        )
-        fig2.update_traces(
-            hovertemplate="<b>%{x}</b><br>Số loài: %{y}<extra></extra>",
-            marker_line_color='#00ffcc',
-            marker_line_width=1
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+        if not weather_today.empty:
+            weather = weather_today.iloc[0]
+            w_col1, w_col2, w_col3, w_col4 = st.columns(4)
+            
+            with w_col1:
+                st.metric("Nhiệt độ", f"{weather['Nhiệt độ (°C)']}°C")
+            with w_col2:
+                st.metric("Độ ẩm", f"{weather['Độ ẩm (%)']}%")
+            with w_col3:
+                st.metric("Lượng mưa", f"{weather['Lượng mưa (mm)']}mm")
+            with w_col4:
+                st.metric("Bay hơi", f"{weather['Tốc độ bay hơi (L/ngày)']}L")
     
-    # Row 3: Top cây và thống kê
-    st.markdown("---")
-    col3, col4 = st.columns([2, 1])
-    
-    with col3:
-        st.markdown("#### 🌟 TOP 10 CÂY QUÝ HIẾM")
-        top_rare = df[df['Độ Quý Hiếm'].isin(['Cực kỳ hiếm', 'Đột biến độc nhất'])].head(10)
-        st.dataframe(
-            top_rare[['Tên Thương Mại', 'Độ Quý Hiếm', 'Giá Dự Kiến (VND)', 'Tỉ Lệ Sống (%)']],
-            use_container_width=True,
-            height=350
-        )
-    
-    with col4:
-        st.markdown("#### 📈 THỐNG KÊ HỆ THỐNG")
+    with tab2:
+        # Giả lập cây cần chăm sóc
+        sample_plants = df_plants.sample(3)
         
-        # Tạo thẻ thống kê
-        stats_data = {
-            "Độ khó phổ biến": df['Độ Khó'].mode()[0],
-            "Môi trường phổ biến": df['Môi Trường Sống'].mode()[0],
-            "Tỉ lệ sống TB": f"{df['Tỉ Lệ Sống (%)'].mean():.1f}%",
-            "Giá trung bình": f"{df['Giá Dự Kiến (VND)'].mean():,.0f} VND",
-            "Loài trong nhà": len(df[df['Môi Trường Sống'] == 'Trong nhà']),
-            "Cây thanh lọc 5⭐": len(df[df['Thanh Lọc KK'] == '⭐⭐⭐⭐⭐'])
-        }
-        
-        for key, value in stats_data.items():
+        for idx, plant in sample_plants.iterrows():
             with st.container(border=True):
-                st.markdown(f"**{key}**")
-                st.markdown(f"<h4 style='color: #00ffcc; margin: 0;'>{value}</h4>", unsafe_allow_html=True)
+                col_p1, col_p2 = st.columns([3, 1])
+                with col_p1:
+                    st.write(f"**{plant['Tên Cây']}**")
+                    st.progress(0.3, text=f"Nước: {plant['Nước TB (L/ngày)']}L/ngày")
+                with col_p2:
+                    if st.button("Chăm sóc", key=f"care_{plant['ID']}"):
+                        st.success("Đã lên lịch!")
+
+# === TAB QUẢN LÝ VỊ TRÍ ===
+elif selected == "📍 Quản Lý Vị Trí":
+    st.title("📍 QUẢN LÝ VỊ TRÍ CÂY TRỒNG")
     
-    # Row 4: Thông tin hệ thống
-    st.markdown("---")
-    with st.expander("ℹ️ THÔNG TIN HỆ THỐNG", expanded=False):
-        sys_col1, sys_col2, sys_col3 = st.columns(3)
+    tab_loc1, tab_loc2, tab_loc3 = st.tabs(["🗺️ Bản đồ & Tọa độ", "📋 Danh sách vị trí", "➕ Thêm vị trí mới"])
+    
+    with tab_loc1:
+        st.markdown("### 🗺️ NHẬP TỌA ĐỘ TỪ GOOGLE MAPS")
         
-        with sys_col1:
-            st.markdown("**💻 Server Info**")
-            st.code(f"""
-            CPU Usage: {random.randint(10, 50)}%
-            Memory: {random.randint(60, 90)}%
-            Uptime: 99.9%
-            Last Update: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}
+        col_map1, col_map2 = st.columns([2, 1])
+        
+        with col_map1:
+            st.info("""
+            **Cách lấy tọa độ từ Google Maps:**
+            1. Mở Google Maps
+            2. Tìm vị trí của bạn
+            3. Nhấp chuột phải vào vị trí
+            4. Chọn "Tọa độ"
+            5. Sao chép tọa độ (ví dụ: 21.0285, 105.8542)
+            """)
+            
+            # Hiển thị bản đồ tĩnh với vị trí mẫu
+            st.image("https://maps.googleapis.com/maps/api/staticmap?center=21.0285,105.8542&zoom=12&size=600x400&maptype=roadmap&markers=color:red%7C21.0285,105.8542", 
+                    caption="Ví dụ: Tọa độ Hà Nội (21.0285, 105.8542)")
+        
+        with col_map2:
+            st.markdown("### 📍 Nhập tọa độ thủ công")
+            
+            # Chọn từ vị trí mẫu
+            sample_location = st.selectbox(
+                "Chọn vị trí mẫu:",
+                list(location_manager.sample_locations.keys())
+            )
+            
+            if sample_location:
+                loc = location_manager.sample_locations[sample_location]
+                lat = st.number_input("Vĩ độ (Latitude):", value=loc["lat"], format="%.6f")
+                lon = st.number_input("Kinh độ (Longitude):", value=loc["lon"], format="%.6f")
+                alt = st.number_input("Độ cao (m):", value=loc["alt"])
+            else:
+                lat = st.number_input("Vĩ độ (Latitude):", value=21.0285, format="%.6f")
+                lon = st.number_input("Kinh độ (Longitude):", value=105.8542, format="%.6f")
+                alt = st.number_input("Độ cao (m):", value=16)
+            
+            location_name = st.text_input("Tên vị trí:", value=sample_location if sample_location else "")
+            description = st.text_area("Mô tả vị trí:")
+            
+            if st.button("💾 Lưu vị trí", type="primary", use_container_width=True):
+                if location_name and lat and lon:
+                    location_manager.add_location(location_name, lat, lon, alt, description)
+                    st.success(f"✅ Đã lưu vị trí: {location_name}")
+                    
+                    # Hiển thị thông tin vị trí
+                    with st.expander("📋 Thông tin vị trí đã lưu", expanded=True):
+                        st.write(f"**Tên:** {location_name}")
+                        st.write(f"**Tọa độ:** {lat}, {lon}")
+                        st.write(f"**Độ cao:** {alt}m")
+                        
+                        # Tính toán thông tin phụ
+                        sunlight_hours = location_manager.calculate_sunlight_hours(lat, lon)
+                        st.write(f"**Giờ nắng ước tính:** {sunlight_hours}h/ngày")
+                        
+                        # Hiển thị link Google Maps
+                        maps_url = f"https://www.google.com/maps?q={lat},{lon}"
+                        st.markdown(f"[🗺️ Xem trên Google Maps]({maps_url})")
+                else:
+                    st.error("Vui lòng nhập đầy đủ thông tin!")
+    
+    with tab_loc2:
+        st.markdown("### 📋 DANH SÁCH VỊ TRÍ ĐÃ LƯU")
+        
+        # Hiển thị vị trí mẫu
+        st.write("**Vị trí mẫu (có sẵn):**")
+        
+        locations_df = []
+        for name, data in location_manager.sample_locations.items():
+            sunlight = location_manager.calculate_sunlight_hours(data["lat"], data["lon"])
+            locations_df.append({
+                "Tên": name,
+                "Vĩ độ": data["lat"],
+                "Kinh độ": data["lon"],
+                "Độ cao": f"{data['alt']}m",
+                "Giờ nắng": f"{sunlight}h",
+                "Khu vực": "Miền Bắc" if data["lat"] > 18 else "Miền Nam"
+            })
+        
+        if locations_df:
+            st.dataframe(pd.DataFrame(locations_df), use_container_width=True, hide_index=True)
+        
+        # Hiển thị vị trí người dùng đã thêm
+        if location_manager.locations:
+            st.write("**Vị trí của bạn:**")
+            user_locations = []
+            
+            for name, data in location_manager.locations.items():
+                user_locations.append({
+                    "Tên": name,
+                    "Vĩ độ": data["lat"],
+                    "Kinh độ": data["lon"],
+                    "Độ cao": f"{data['alt']}m",
+                    "Ngày tạo": data["created_at"]
+                })
+            
+            st.dataframe(pd.DataFrame(user_locations), use_container_width=True, hide_index=True)
+        else:
+            st.info("Chưa có vị trí nào được thêm. Hãy thêm vị trí đầu tiên!")
+    
+    with tab_loc3:
+        st.markdown("### ➕ THÊM VỊ TRÍ MỚI BẰNG TÊN ĐỊA DANH")
+        
+        col_new1, col_new2 = st.columns([2, 1])
+        
+        with col_new1:
+            location_query = st.text_input("Nhập tên địa điểm:", placeholder="Ví dụ: 123 Đường ABC, Quận 1, TP.HCM")
+            
+            if st.button("🔍 Tìm tọa độ", use_container_width=True):
+                if location_query:
+                    with st.spinner("Đang tìm kiếm tọa độ..."):
+                        try:
+                            location = weather_system.geolocator.geocode(location_query)
+                            if location:
+                                st.success(f"✅ Tìm thấy: {location.address}")
+                                
+                                # Hiển thị kết quả
+                                col_res1, col_res2 = st.columns(2)
+                                with col_res1:
+                                    st.metric("Vĩ độ", f"{location.latitude:.6f}")
+                                with col_res2:
+                                    st.metric("Kinh độ", f"{location.longitude:.6f}")
+                                
+                                # Tự động điền form
+                                st.session_state.found_lat = location.latitude
+                                st.session_state.found_lon = location.longitude
+                                st.session_state.found_address = location.address
+                            else:
+                                st.error("Không tìm thấy địa điểm. Vui lòng thử lại!")
+                        except Exception as e:
+                            st.error(f"Lỗi: {e}")
+        
+        with col_new2:
+            st.markdown("**Hoặc quét mã QR**")
+            st.image("https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://ecomind.com/add-location", 
+                    caption="Quét để thêm vị trí từ điện thoại")
+
+# === TAB DỰ BÁO THỜI TIẾT ===
+elif selected == "🌦️ Dự Báo Thời Tiết":
+    st.title("🌦️ DỰ BÁO THỜI TIẾT & ẢNH HƯỞNG ĐẾN CÂY TRỒNG")
+    
+    # Chọn vị trí
+    st.markdown("### 📍 CHỌN VỊ TRÍ ĐỂ DỰ BÁO")
+    
+    col_weather1, col_weather2 = st.columns([1, 2])
+    
+    with col_weather1:
+        location_options = list(location_manager.sample_locations.keys())
+        if location_manager.locations:
+            location_options += list(location_manager.locations.keys())
+        
+        selected_location = st.selectbox(
+            "Chọn vị trí:",
+            location_options,
+            index=0
+        )
+        
+        # Lấy tọa độ
+        if selected_location in location_manager.sample_locations:
+            lat = location_manager.sample_locations[selected_location]["lat"]
+            lon = location_manager.sample_locations[selected_location]["lon"]
+        else:
+            loc_data = location_manager.get_location(selected_location)
+            lat = loc_data["lat"]
+            lon = loc_data["lon"]
+        
+        # Hiển thị thông tin vị trí
+        st.info(f"""
+        **Thông tin vị trí:**
+        - Tọa độ: {lat:.4f}, {lon:.4f}
+        - Giờ nắng: {location_manager.calculate_sunlight_hours(lat, lon)}h/ngày
+        - Múi giờ: {weather_system.get_timezone(lat, lon)}
+        """)
+        
+        # Chọn số ngày dự báo
+        forecast_days = st.slider("Số ngày dự báo:", 1, 14, 7)
+        
+        if st.button("🌤️ Cập nhật dự báo", type="primary", use_container_width=True):
+            st.session_state.forecast_data = weather_system.simulate_weather_data(lat, lon, forecast_days)
+    
+    with col_weather2:
+        # Hiển thị bản đồ vị trí
+        st.markdown(f"**Vị trí: {selected_location}**")
+        
+        # Tạo URL Google Maps
+        maps_url = f"https://www.google.com/maps?q={lat},{lon}&z=12"
+        st.markdown(f"[🗺️ Xem vị trí trên Google Maps]({maps_url})")
+        
+        # Hiển thị ảnh vệ tinh (static map)
+        map_img_url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=11&size=600x300&maptype=hybrid&markers=color:red%7C{lat},{lon}"
+        st.image(map_img_url, caption=f"Bản đồ vệ tinh {selected_location}")
+    
+    # Hiển thị dự báo thời tiết
+    if 'forecast_data' in st.session_state:
+        weather_df = st.session_state.forecast_data
+        
+        st.markdown("### 📊 DỰ BÁO THỜI TIẾT CHI TIẾT")
+        
+        # Biểu đồ nhiệt độ
+        fig_temp = px.line(
+            weather_df, 
+            x='Ngày', 
+            y='Nhiệt độ (°C)',
+            title='Dự báo nhiệt độ',
+            markers=True,
+            line_shape='spline'
+        )
+        fig_temp.update_traces(line_color='#ff6b6b', line_width=3)
+        fig_temp.update_layout(template='plotly_dark')
+        st.plotly_chart(fig_temp, use_container_width=True)
+        
+        # Hiển thị bảng dự báo
+        st.markdown("#### 📋 BẢNG DỰ BÁO CHI TIẾT")
+        st.dataframe(
+            weather_df[['Ngày', 'Nhiệt độ (°C)', 'Độ ẩm (%)', 'Lượng mưa (mm)', 'Tốc độ bay hơi (L/ngày)', 'Điều kiện']],
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Phân tích ảnh hưởng đến cây trồng
+        st.markdown("### 🌿 PHÂN TÍCH ẢNH HƯỞNG ĐẾN CÂY TRỒNG")
+        
+        col_impact1, col_impact2, col_impact3 = st.columns(3)
+        
+        with col_impact1:
+            avg_temp = weather_df['Nhiệt độ (°C)'].mean()
+            if avg_temp > 30:
+                st.error(f"**Nhiệt độ cao:** {avg_temp:.1f}°C\n⚠️ Cây dễ mất nước")
+            elif avg_temp < 18:
+                st.warning(f"**Nhiệt độ thấp:** {avg_temp:.1f}°C\n🌡️ Cây phát triển chậm")
+            else:
+                st.success(f"**Nhiệt độ lý tưởng:** {avg_temp:.1f}°C\n✅ Tốt cho cây trồng")
+        
+        with col_impact2:
+            total_rain = weather_df['Lượng mưa (mm)'].sum()
+            if total_rain > 50:
+                st.info(f"**Mưa nhiều:** {total_rain}mm\n💧 Giảm tưới nước")
+            elif total_rain > 10:
+                st.success(f"**Mưa vừa:** {total_rain}mm\n🌧️ Tốt cho cây")
+            else:
+                st.warning(f"**Ít mưa:** {total_rain}mm\n⚠️ Cần tăng tưới")
+        
+        with col_impact3:
+            avg_evap = weather_df['Tốc độ bay hơi (L/ngày)'].mean()
+            if avg_evap > 0.1:
+                st.warning(f"**Bay hơi cao:** {avg_evap:.3f}L/ngày\n🔥 Nước nhanh hết")
+            else:
+                st.success(f"**Bay hơi thấp:** {avg_evap:.3f}L/ngày\n💧 Tiết kiệm nước")
+        
+        # Khuyến nghị chăm sóc
+        st.markdown("#### 💡 KHUYẾN NGHỊ CHĂM SÓC")
+        
+        recommendations = []
+        
+        if weather_df['Nhiệt độ (°C)'].max() > 32:
+            recommendations.append("🌞 **Tránh nắng gắt:** Di chuyển cây vào bóng râm vào buổi trưa")
+        
+        if weather_df['Lượng mưa (mm)'].sum() > 30:
+            recommendations.append("☔ **Giảm tưới:** Trời mưa nhiều, giảm 50% lượng nước tưới")
+        
+        if weather_df['Độ ẩm (%)'].mean() > 80:
+            recommendations.append("💨 **Tăng thông gió:** Độ ẩm cao dễ gây nấm bệnh")
+        
+        if not recommendations:
+            recommendations.append("✅ **Điều kiện tốt:** Duy trì chế độ chăm sóc hiện tại")
+        
+        for rec in recommendations:
+            st.write(f"• {rec}")
+
+# === TAB DỰ BÁO NƯỚC ===
+elif selected == "💧 Dự Báo Nước":
+    st.title("💧 DỰ BÁO BÌNH HẾT NƯỚC & LỊCH TƯỚI")
+    
+    tab_water1, tab_water2, tab_water3 = st.tabs(["📊 Dự báo hết nước", "🧮 Tính toán nhu cầu", "📅 Lịch tưới tự động"])
+    
+    with tab_water1:
+        st.markdown("### ⏳ DỰ BÁO THỜI GIAN BÌNH HẾT NƯỚC")
+        
+        # Chọn cây và vị trí
+        col_water1, col_water2 = st.columns(2)
+        
+        with col_water1:
+            selected_plant = st.selectbox(
+                "Chọn cây:",
+                df_plants['Tên Cây'].tolist(),
+                index=0
+            )
+            
+            plant_data = df_plants[df_plants['Tên Cây'] == selected_plant].iloc[0]
+            
+            # Hiển thị thông tin cây
+            st.info(f"""
+            **Thông tin cây:**
+            - Nước TB: {plant_data['Nước TB (L/ngày)']}L/ngày
+            - TG hết nước ước tính: {plant_data['TG bình hết nước (ngày)']} ngày
+            - Độ khó: {plant_data['Độ khó chăm sóc']}
             """)
         
-        with sys_col2:
-            st.markdown("**🔐 Bảo Mật**")
-            st.success("✓ Mã hóa AES-256")
-            st.success("✓ Xác thực 2 lớp")
-            st.warning("⚠️ Backup hàng tuần")
+        with col_water2:
+            location_options = list(location_manager.sample_locations.keys())
+            selected_location = st.selectbox(
+                "Chọn vị trí cây:",
+                location_options,
+                index=0
+            )
+            
+            loc_data = location_manager.sample_locations[selected_location]
+            
+            # Thông số bình nước
+            st.markdown("**Thông số bình nước:**")
+            pot_capacity = st.number_input("Dung tích bình (L):", min_value=0.1, max_value=50.0, value=5.0, step=0.5)
+            current_level = st.slider("Mức nước hiện tại (%):", 0, 100, 80)
+            
+            current_volume = pot_capacity * (current_level / 100)
+            st.metric("Lượng nước hiện tại", f"{current_volume:.2f}L")
         
-        with sys_col3:
-            st.markdown("**📊 Data Health**")
-            st.progress(0.95, text="Data Quality: 95%")
-            st.progress(0.98, text="Completeness: 98%")
-            st.progress(1.0, text="Consistency: 100%")
-
-# === TAB THƯ VIỆN NÂNG CẤP ===
-elif selected == "📚 Thư Viện":
-    st.title("📚 KHO DỮ LIỆU THỰC VẬT TOÀN CẦU")
-    st.markdown(f"*Đang hiển thị {len(df):,} loài thực vật từ cơ sở dữ liệu*")
+        if st.button("🔮 Dự báo thời gian hết nước", type="primary", use_container_width=True):
+            with st.spinner("Đang tính toán dự báo..."):
+                # Lấy dữ liệu thời tiết
+                weather_df = weather_system.simulate_weather_data(
+                    loc_data["lat"], 
+                    loc_data["lon"], 
+                    days=14
+                )
+                
+                # Tính toán dự báo
+                predictions, empty_day = water_predictor.predict_water_emptying(
+                    current_volume,
+                    plant_data['Nước TB (L/ngày)'],
+                    weather_df
+                )
+                
+                # Hiển thị kết quả
+                st.markdown("#### 📈 BIỂU ĐỒ DỰ BÁO MỨC NƯỚC")
+                
+                fig_water = px.line(
+                    predictions,
+                    x='Ngày',
+                    y='Nước còn lại (L)',
+                    title='Dự báo mức nước trong bình',
+                    markers=True
+                )
+                
+                # Thêm đường 0
+                fig_water.add_hline(y=0, line_dash="dash", line_color="red", 
+                                  annotation_text="Mức hết nước")
+                
+                fig_water.update_layout(template='plotly_dark')
+                st.plotly_chart(fig_water, use_container_width=True)
+                
+                # Hiển thị ngày hết nước dự báo
+                if empty_day:
+                    st.error(f"⚠️ **DỰ BÁO HẾT NƯỚC:** Ngày {empty_day}")
+                    
+                    # Tính số ngày còn lại
+                    today = datetime.datetime.now()
+                    empty_date = datetime.datetime.strptime(empty_day, "%d/%m")
+                    empty_date = empty_date.replace(year=today.year)
+                    
+                    if empty_date < today:
+                        empty_date = empty_date.replace(year=today.year + 1)
+                    
+                    days_left = (empty_date - today).days
+                    st.warning(f"⏳ **Còn khoảng {days_left} ngày** trước khi hết nước")
+                else:
+                    st.success(f"✅ **BÌNH ĐỦ NƯỚC** cho 14 ngày tới")
+                
+                # Hiển thị bảng chi tiết
+                with st.expander("📋 CHI TIẾT TÍNH TOÁN"):
+                    st.dataframe(predictions, use_container_width=True, hide_index=True)
     
-    # Bộ lọc nâng cao
-    with st.expander("🔍 BỘ LỌC NÂNG CAO", expanded=True):
-        col_filter1, col_filter2, col_filter3, col_filter4 = st.columns(4)
+    with tab_water2:
+        st.markdown("### 🧮 TÍNH TOÁN NHU CẦU NƯỚC CHI TIẾT")
         
-        with col_filter1:
-            search_txt = st.text_input(
-                "Tìm kiếm tên cây:", 
-                placeholder="Nhập tên cây hoặc từ khóa...",
-                help="Tìm kiếm theo tên thương mại, tên khoa học, mô tả"
-            )
-        
-        with col_filter2:
-            filter_difficulty = st.multiselect(
-                "Độ khó chăm sóc:",
-                options=df["Độ Khó"].unique(),
-                default=[]
-            )
-        
-        with col_filter3:
-            filter_environment = st.multiselect(
-                "Môi trường sống:",
-                options=df["Môi Trường Sống"].unique(),
-                default=[]
-            )
-        
-        with col_filter4:
-            filter_rarity = st.multiselect(
-                "Độ quý hiếm:",
-                options=df["Độ Quý Hiếm"].unique(),
-                default=[]
-            )
-        
-        # More filters in second row
-        col_filter5, col_filter6, col_filter7, col_filter8 = st.columns(4)
-        
-        with col_filter5:
-            filter_pet_safe = st.selectbox(
-                "An toàn thú cưng:",
-                options=["Tất cả", "✅ An toàn", "❌ Độc hại", "⚠️ Hạn chế tiếp xúc"]
-            )
-        
-        with col_filter6:
-            water_range = st.slider(
-                "Nhu cầu nước (L/ngày):",
-                min_value=float(df["Nước (L/ngày)"].min()),
-                max_value=float(df["Nước (L/ngày)"].max()),
-                value=(0.0, 2.0),
-                step=0.1
-            )
-        
-        with col_filter7:
-            price_range = st.slider(
-                "Khoảng giá (VND):",
-                min_value=int(df["Giá Dự Kiến (VND)"].min()),
-                max_value=int(df["Giá Dự Kiến (VND)"].max()),
-                value=(0, 50000000),
-                step=100000
-            )
-        
-        with col_filter8:
-            survival_rate = st.slider(
-                "Tỉ lệ sống tối thiểu (%):",
-                min_value=0,
-                max_value=100,
-                value=70,
-                step=5
-            )
-    
-    # Áp dụng bộ lọc
-    df_filtered = df.copy()
-    
-    if search_txt:
-        mask = (
-            df_filtered["Tên Thương Mại"].str.contains(search_txt, case=False, na=False) |
-            df_filtered["Tên Khoa Học"].str.contains(search_txt, case=False, na=False) |
-            df_filtered["Mô Tả Chi Tiết"].str.contains(search_txt, case=False, na=False)
+        # Chọn nhiều cây để so sánh
+        selected_plants = st.multiselect(
+            "Chọn các cây để so sánh:",
+            df_plants['Tên Cây'].tolist(),
+            default=df_plants['Tên Cây'].iloc[:3].tolist()
         )
-        df_filtered = df_filtered[mask]
+        
+        if selected_plants:
+            comparison_data = []
+            
+            for plant_name in selected_plants:
+                plant = df_plants[df_plants['Tên Cây'] == plant_name].iloc[0]
+                
+                # Tính toán cho các điều kiện thời tiết khác nhau
+                for condition in ["Bình thường", "Nắng nóng", "Mưa nhiều"]:
+                    if condition == "Bình thường":
+                        factor = 1.0
+                    elif condition == "Nắng nóng":
+                        factor = 1.5
+                    else:  # Mưa nhiều
+                        factor = 0.5
+                    
+                    adjusted_need = plant['Nước TB (L/ngày)'] * factor
+                    
+                    comparison_data.append({
+                        "Cây": plant_name,
+                        "Điều kiện": condition,
+                        "Nhu cầu (L/ngày)": round(adjusted_need, 3),
+                        "1 tuần (L)": round(adjusted_need * 7, 2),
+                        "1 tháng (L)": round(adjusted_need * 30, 2)
+                    })
+            
+            df_comparison = pd.DataFrame(comparison_data)
+            
+            # Biểu đồ so sánh
+            fig_comparison = px.bar(
+                df_comparison,
+                x='Cây',
+                y='Nhu cầu (L/ngày)',
+                color='Điều kiện',
+                barmode='group',
+                title='So sánh nhu cầu nước theo điều kiện',
+                color_discrete_sequence=['#00ffcc', '#ff6b6b', '#4dabf7']
+            )
+            fig_comparison.update_layout(template='plotly_dark')
+            st.plotly_chart(fig_comparison, use_container_width=True)
+            
+            # Bảng chi tiết
+            st.dataframe(
+                df_comparison,
+                use_container_width=True,
+                hide_index=True
+            )
+    
+    with tab_water3:
+        st.markdown("### 📅 LỊCH TƯỚI NƯỚC TỰ ĐỘNG")
+        
+        # Tạo lịch tưới
+        col_sched1, col_sched2 = st.columns(2)
+        
+        with col_sched1:
+            start_date = st.date_input("Ngày bắt đầu:", datetime.datetime.now())
+            schedule_days = st.slider("Số ngày lịch:", 7, 90, 30)
+            
+            plant_for_schedule = st.selectbox(
+                "Cây cần lịch tưới:",
+                df_plants['Tên Cây'].tolist(),
+                key="schedule_plant"
+            )
+            
+            plant_schedule = df_plants[df_plants['Tên Cây'] == plant_for_schedule].iloc[0]
+        
+        with col_sched2:
+            location_schedule = st.selectbox(
+                "Vị trí:",
+                list(location_manager.sample_locations.keys()),
+                key="schedule_location"
+            )
+            
+            loc_schedule = location_manager.sample_locations[location_schedule]
+            
+            # Tần suất tưới
+            watering_frequency = st.select_slider(
+                "Tần suất tưới:",
+                options=["Hàng ngày", "2 ngày/lần", "3 ngày/lần", "Tuần/lần", "Khi cần"],
+                value="2 ngày/lần"
+            )
+        
+        if st.button("📅 Tạo lịch tưới", type="primary", use_container_width=True):
+            # Tạo lịch tưới
+            schedule = []
+            current_date = start_date
+            
+            for day in range(schedule_days):
+                date_str = current_date.strftime("%d/%m/%Y")
+                
+                # Xác định ngày có cần tưới không
+                need_water = False
+                if watering_frequency == "Hàng ngày":
+                    need_water = True
+                elif watering_frequency == "2 ngày/lần":
+                    need_water = (day % 2 == 0)
+                elif watering_frequency == "3 ngày/lần":
+                    need_water = (day % 3 == 0)
+                elif watering_frequency == "Tuần/lần":
+                    need_water = (day % 7 == 0)
+                else:  # Khi cần
+                    # Dựa trên thời tiết
+                    weather = weather_system.simulate_weather_data(
+                        loc_schedule["lat"], 
+                        loc_schedule["lon"], 
+                        days=day+1
+                    ).iloc[0]
+                    need_water = (weather['Lượng mưa (mm)'] < 5)
+                
+                if need_water:
+                    schedule.append({
+                        "Ngày": date_str,
+                        "Thứ": current_date.strftime("%A"),
+                        "Hành động": "💧 Tưới nước",
+                        "Lượng nước": f"{plant_schedule['Nước TB (L/ngày)']:.2f}L",
+                        "Ghi chú": "Tưới đều quanh gốc"
+                    })
+                else:
+                    schedule.append({
+                        "Ngày": date_str,
+                        "Thứ": current_date.strftime("%A"),
+                        "Hành động": "✅ Nghỉ",
+                        "Lượng nước": "0L",
+                        "Ghi chú": "Kiểm tra độ ẩm đất"
+                    })
+                
+                current_date += timedelta(days=1)
+            
+            df_schedule = pd.DataFrame(schedule)
+            
+            # Hiển thị lịch
+            st.markdown(f"#### 📅 LỊCH TƯỚI {plant_for_schedule}")
+            st.dataframe(df_schedule, use_container_width=True, hide_index=True)
+            
+            # Xuất lịch
+            csv = df_schedule.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Tải xuống lịch tưới (CSV)",
+                data=csv,
+                file_name=f"lich_tuoi_{plant_for_schedule}_{start_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+# === TAB LỊCH CHĂM SÓC ===
+elif selected == "📅 Lịch Chăm Sóc":
+    st.title("📅 LỊCH CHĂM SÓC TỔNG HỢP")
+    
+    # Tạo lịch chăm sóc tích hợp
+    col_cal1, col_cal2 = st.columns([1, 2])
+    
+    with col_cal1:
+        st.markdown("### 🎯 THIẾT LẬP LỊCH")
+        
+        # Chọn cây cho lịch
+        garden_plants = st.multiselect(
+            "Chọn cây cho vườn:",
+            df_plants['Tên Cây'].tolist(),
+            default=df_plants['Tên Cây'].iloc[:5].tolist()
+        )
+        
+        if garden_plants:
+            # Hiển thị thông tin vườn
+            st.markdown(f"**Vườn của bạn:** {len(garden_plants)} cây")
+            
+            total_water = 0
+            for plant_name in garden_plants:
+                plant = df_plants[df_plants['Tên Cây'] == plant_name].iloc[0]
+                total_water += plant['Nước TB (L/ngày)']
+            
+            st.metric("Tổng nước cần/ngày", f"{total_water:.2f}L")
+        
+        # Tùy chọn lịch
+        st.markdown("### ⚙️ TÙY CHỌN")
+        
+        enable_reminders = st.toggle("Nhắc nhở tự động", value=True)
+        if enable_reminders:
+            reminder_time = st.time_input("Thời gian nhắc nhở:", datetime.time(7, 0))
+        
+        notification_type = st.multiselect(
+            "Loại thông báo:",
+            ["Tưới nước", "Bón phân", "Cắt tỉa", "Kiểm tra sâu bệnh"],
+            default=["Tưới nước"]
+        )
+    
+    with col_cal2:
+        st.markdown("### 📅 LỊCH THÁNG")
+        
+        # Tạo lịch tháng
+        today = datetime.datetime.now()
+        year = today.year
+        month = today.month
+        
+        # Tạo calendar
+        import calendar
+        cal = calendar.monthcalendar(year, month)
+        
+        # Hiển thị lịch
+        days_of_week = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+        
+        # Tạo HTML calendar
+        cal_html = """
+        <div style='background: rgba(30, 35, 50, 0.9); border-radius: 10px; padding: 20px;'>
+            <h4 style='text-align: center; color: #00ffcc;'>{month_name} {year}</h4>
+            <table style='width: 100%; border-collapse: collapse; text-align: center;'>
+                <tr style='background: rgba(0, 255, 204, 0.2);'>
+        """.format(month_name=calendar.month_name[month], year=year)
+        
+        # Header
+        for day in days_of_week:
+            cal_html += f"<th style='padding: 10px; border: 1px solid rgba(0, 255, 204, 0.3);'>{day}</th>"
+        cal_html += "</tr>"
+        
+        # Ngày
+        for week in cal:
+            cal_html += "<tr>"
+            for day in week:
+                if day == 0:
+                    cal_html += "<td style='padding: 10px; border: 1px solid rgba(0, 255, 204, 0.1);'></td>"
+                else:
+                    # Đánh dấu ngày hôm nay
+                    if day == today.day:
+                        cell_style = "background: rgba(0, 255, 204, 0.3); color: white; font-weight: bold;"
+                    else:
+                        cell_style = ""
+                    
+                    # Thêm công việc (giả lập)
+                    tasks = random.randint(0, 2)
+                    task_indicator = "🌿" * tasks if tasks > 0 else ""
+                    
+                    cal_html += f"<td style='padding: 10px; border: 1px solid rgba(0, 255, 204, 0.1); {cell_style}'>"
+                    cal_html += f"<div>{day}</div><small>{task_indicator}</small>"
+                    cal_html += "</td>"
+            cal_html += "</tr>"
+        
+        cal_html += "</table></div>"
+        
+        st.markdown(cal_html, unsafe_allow_html=True)
+        
+        # Danh sách công việc tuần này
+        st.markdown("#### 📝 CÔNG VIỆC TUẦN NÀY")
+        
+        weekly_tasks = [
+            {"Ngày": "Hôm nay", "Công việc": "💧 Tưới cây hồng", "Thời gian": "7:00", "Trạng thái": "✅"},
+            {"Ngày": "Mai", "Công việc": "🌿 Bón phân lan", "Thời gian": "8:00", "Trạng thái": "⏳"},
+            {"Ngày": "Thứ 5", "Công việc": "✂️ Cắt tỉa bonsai", "Thời gian": "9:00", "Trạng thái": "📅"},
+            {"Ngày": "Thứ 7", "Công việc": "🔍 Kiểm tra sâu bệnh", "Thời gian": "10:00", "Trạng thái": "📅"},
+        ]
+        
+        st.dataframe(pd.DataFrame(weekly_tasks), use_container_width=True, hide_index=True)
+    
+    # Phần thống kê
+    st.markdown("---")
+    st.markdown("### 📊 THỐNG KÊ CHĂM SÓC")
+    
+    if garden_plants:
+        stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
+        
+        with stats_col1:
+            st.metric("Cây cần tưới", len(garden_plants), "cây")
+        
+        with stats_col2:
+            # Tính tổng thời gian chăm sóc
+            total_time = len(garden_plants) * 10  # 10 phút/cây
+            st.metric("Thời gian chăm", f"{total_time} phút")
+        
+        with stats_col3:
+            # Tính lượng nước
+            total_water = sum(
+                df_plants[df_plants['Tên Cây'] == plant].iloc[0]['Nước TB (L/ngày)'] 
+                for plant in garden_plants
+            )
+            st.metric("Nước cần/ngày", f"{total_water:.1f}L")
+        
+        with stats_col4:
+            st.metric("Tiết kiệm nước", "35%", "5.2%")
+
+# === TAB THƯ VIỆN CÂY ===
+elif selected == "🌿 Thư Viện Cây":
+    st.title("🌿 THƯ VIỆN CÂY TRỒNG")
+    
+    # Tìm kiếm và lọc
+    col_lib1, col_lib2, col_lib3 = st.columns([2, 1, 1])
+    
+    with col_lib1:
+        search_query = st.text_input("🔍 Tìm kiếm cây:", placeholder="Nhập tên cây hoặc đặc điểm...")
+    
+    with col_lib2:
+        filter_difficulty = st.multiselect(
+            "Độ khó:",
+            df_plants['Độ khó chăm sóc'].unique(),
+            default=[]
+        )
+    
+    with col_lib3:
+        filter_water = st.slider("Nhu cầu nước (L/ngày):", 
+                               float(df_plants['Nước TB (L/ngày)'].min()),
+                               float(df_plants['Nước TB (L/ngày)'].max()),
+                               (0.0, 2.0))
+    
+    # Lọc dữ liệu
+    filtered_plants = df_plants.copy()
+    
+    if search_query:
+        filtered_plants = filtered_plants[filtered_plants['Tên Cây'].str.contains(search_query, case=False, na=False)]
     
     if filter_difficulty:
-        df_filtered = df_filtered[df_filtered["Độ Khó"].isin(filter_difficulty)]
+        filtered_plants = filtered_plants[filtered_plants['Độ khó chăm sóc'].isin(filter_difficulty)]
     
-    if filter_environment:
-        df_filtered = df_filtered[df_filtered["Môi Trường Sống"].isin(filter_environment)]
-    
-    if filter_rarity:
-        df_filtered = df_filtered[df_filtered["Độ Quý Hiếm"].isin(filter_rarity)]
-    
-    if filter_pet_safe != "Tất cả":
-        df_filtered = df_filtered[df_filtered["Thú Cưng"] == filter_pet_safe]
-    
-    df_filtered = df_filtered[
-        (df_filtered["Nước (L/ngày)"] >= water_range[0]) &
-        (df_filtered["Nước (L/ngày)"] <= water_range[1])
+    filtered_plants = filtered_plants[
+        (filtered_plants['Nước TB (L/ngày)'] >= filter_water[0]) &
+        (filtered_plants['Nước TB (L/ngày)'] <= filter_water[1])
     ]
-    
-    df_filtered = df_filtered[
-        (df_filtered["Giá Dự Kiến (VND)"] >= price_range[0]) &
-        (df_filtered["Giá Dự Kiến (VND)"] <= price_range[1])
-    ]
-    
-    df_filtered = df_filtered[df_filtered["Tỉ Lệ Sống (%)"] >= survival_rate]
     
     # Hiển thị kết quả
-    result_count = len(df_filtered)
-    st.markdown(f"### 📊 Kết quả tìm thấy: **{result_count}** loài cây")
+    st.markdown(f"### 📋 KẾT QUẢ: {len(filtered_plants)} cây")
     
-    if result_count == 0:
-        st.warning("Không tìm thấy cây nào phù hợp với bộ lọc của bạn!")
-        st.info("💡 Thử mở rộng bộ lọc hoặc sử dụng từ khóa khác")
-    else:
-        # Tùy chọn hiển thị
-        view_mode = st.radio(
-            "Chế độ hiển thị:",
-            ["📋 Bảng dữ liệu", "🃏 Thẻ bài (Card View)"],
-            horizontal=True
-        )
-        
-        if view_mode == "📋 Bảng dữ liệu":
-            # Hiển thị dataframe với cấu hình cột
-            column_config = {
-                "ID": st.column_config.NumberColumn(format="#%d"),
-                "Nước (L/ngày)": st.column_config.ProgressColumn(
+    # Chế độ hiển thị
+    view_mode = st.radio("Chế độ hiển thị:", ["Bảng", "Thẻ"], horizontal=True)
+    
+    if view_mode == "Bảng":
+        st.dataframe(
+            filtered_plants,
+            use_container_width=True,
+            height=600,
+            column_config={
+                "Nước TB (L/ngày)": st.column_config.ProgressColumn(
                     "💧 Nước",
                     min_value=0,
                     max_value=2.0,
                     format="%.2f L"
                 ),
-                "Tỉ Lệ Sống (%)": st.column_config.ProgressColumn(
-                    "❤️ Sống",
-                    min_value=0,
-                    max_value=100,
-                    format="%.0f%%"
-                ),
-                "Giá Dự Kiến (VND)": st.column_config.NumberColumn(
-                    "💰 Giá",
-                    format="%,.0f VND"
-                ),
-                "Thú Cưng": st.column_config.TextColumn("🐕 An toàn"),
-                "Mô Tả Chi Tiết": st.column_config.TextColumn("📝 Mô tả", width="large")
-            }
-            
-            # Chọn cột để hiển thị
-            default_columns = [
-                "ID", "Tên Thương Mại", "Tên Khoa Học", "Nước (L/ngày)", 
-                "Độ Khó", "Thú Cưng", "Độ Quý Hiếm", "Giá Dự Kiến (VND)"
-            ]
-            
-            selectable_columns = st.multiselect(
-                "Chọn cột hiển thị:",
-                options=df_filtered.columns.tolist(),
-                default=default_columns
-            )
-            
-            if selectable_columns:
-                st.dataframe(
-                    df_filtered[selectable_columns],
-                    use_container_width=True,
-                    height=600,
-                    column_config=column_config,
-                    hide_index=True
+                "TG bình hết nước (ngày)": st.column_config.NumberColumn(
+                    "⏳ TG hết nước",
+                    help="Thời gian bình hết nước ước tính"
                 )
-        
-        else:  # Card View
-            st.markdown("---")
-            items_per_row = 3
-            items = df_filtered.head(30).to_dict('records')  # Giới hạn 30 item để hiệu năng
-            
-            for i in range(0, len(items), items_per_row):
-                cols = st.columns(items_per_row)
-                for col_idx, col in enumerate(cols):
-                    item_idx = i + col_idx
-                    if item_idx < len(items):
-                        item = items[item_idx]
-                        with col:
-                            with st.container(border=True):
-                                # Header với màu theo độ quý hiếm
-                                rarity_colors = {
-                                    "Phổ biến": "#4CAF50",
-                                    "Hiếm": "#FF9800",
-                                    "Rất hiếm": "#F44336",
-                                    "Cực kỳ hiếm": "#9C27B0",
-                                    "Đột biến độc nhất": "#FF4081"
-                                }
-                                
-                                st.markdown(f"""
-                                <div style="background: linear-gradient(90deg, {rarity_colors.get(item['Độ Quý Hiếm'], '#00ffcc')}, transparent); 
-                                            padding: 10px; border-radius: 8px; margin: -10px -10px 10px -10px;">
-                                    <h4 style="margin: 0; color: white;">{item['Tên Thương Mại']}</h4>
-                                    <small style="color: #cccccc;">{item['Tên Khoa Học']}</small>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                
-                                # Thông tin chính
-                                col_info1, col_info2 = st.columns(2)
-                                with col_info1:
-                                    st.markdown(f"**💧 Nước:** {item['Nước (L/ngày)']}L")
-                                    st.markdown(f"**🌡️ Nhiệt độ:** {item['Nhiệt Độ']}")
-                                
-                                with col_info2:
-                                    st.markdown(f"**⚡ Độ khó:** {item['Độ Khó']}")
-                                    st.markdown(f"**💰 Giá:** {item['Giá Dự Kiến (VND)']:,} VND")
-                                
-                                # Progress bars
-                                st.progress(item['Tỉ Lệ Sống (%)']/100, 
-                                          text=f"Tỉ lệ sống: {item['Tỉ Lệ Sống (%)']}%")
-                                
-                                # Actions
-                                btn_col1, btn_col2 = st.columns(2)
-                                with btn_col1:
-                                    if st.button("👁️ Chi tiết", key=f"view_{item['ID']}", use_container_width=True):
-                                        st.session_state.selected_plant = item['ID']
-                                        st.switch_page("?selected=🔍 Tra Cứu")
-                                
-                                with btn_col2:
-                                    if st.button("⭐ Yêu thích", key=f"fav_{item['ID']}", use_container_width=True):
-                                        if item['ID'] not in user_data['favorites']:
-                                            user_data['favorites'].append(item['ID'])
-                                            st.success("Đã thêm vào yêu thích!")
-    
-    # Export và thao tác
-    st.markdown("---")
-    col_exp1, col_exp2, col_exp3 = st.columns(3)
-    
-    with col_exp1:
-        if st.button("📥 Xuất CSV", use_container_width=True):
-            csv = df_filtered.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="⬇️ Tải xuống CSV",
-                data=csv,
-                file_name=f"plant_database_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-    
-    with col_exp2:
-        if st.button("📊 Xuất Excel", use_container_width=True):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_filtered.to_excel(writer, index=False, sheet_name='Plant Database')
-            excel_data = output.getvalue()
-            
-            st.download_button(
-                label="⬇️ Tải xuống Excel",
-                data=excel_data,
-                file_name=f"plant_database_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-    
-    with col_exp3:
-        if st.button("🖨️ In Báo Cáo", use_container_width=True):
-            st.info("Tính năng in ấn đang được phát triển...")
-
-# === TAB TRA CỨU CHI TIẾT ===
-elif selected == "🔍 Tra Cứu":
-    st.title("🔬 HỒ SƠ SINH HỌC CHI TIẾT")
-    
-    # Tìm kiếm và chọn cây
-    search_col1, search_col2 = st.columns([3, 1])
-    
-    with search_col1:
-        plant_search = st.selectbox(
-            "Tìm và chọn cây cần xem hồ sơ:",
-            options=df["Tên Thương Mại"].tolist(),
-            index=0,
-            placeholder="Gõ tên cây để tìm kiếm...",
-            help="Có thể tìm kiếm bằng tên thương mại hoặc tên khoa học"
+            },
+            hide_index=True
         )
-    
-    with search_col2:
-        random_plant = st.button("🎲 Cây ngẫu nhiên", use_container_width=True)
-        if random_plant:
-            random_idx = random.randint(0, len(df)-1)
-            plant_search = df.iloc[random_idx]["Tên Thương Mại"]
-    
-    if plant_search:
-        plant_data = df[df["Tên Thương Mại"] == plant_search].iloc[0]
-        
-        # Layout chính
-        col_main1, col_main2 = st.columns([1, 2])
-        
-        with col_main1:
-            # Ảnh minh họa với Unsplash
-            keyword = plant_data["Tên Thương Mại"].split()[0].lower()
-            st.image(
-                f"https://source.unsplash.com/600x800/?{keyword}-plant",
-                caption=f"Ảnh minh họa: {plant_data['Tên Thương Mại']}",
-                use_container_width=True
-            )
-            
-            # Quick stats
-            with st.container(border=True):
-                st.markdown("### 📊 Chỉ số nhanh")
-                
-                metrics_col1, metrics_col2 = st.columns(2)
-                with metrics_col1:
-                    st.metric("💧 Nước", f"{plant_data['Nước (L/ngày)']} L/ngày")
-                    st.metric("❤️ Sống", f"{plant_data['Tỉ Lệ Sống (%)']}%")
-                
-                with metrics_col2:
-                    st.metric("💰 Giá", f"{plant_data['Giá Dự Kiến (VND)']:,} VND")
-                    st.metric("⚡ Độ khó", plant_data['Độ Khó'])
-        
-        with col_main2:
-            # Header với badge
-            rarity_badge = {
-                "Phổ biến": "🟢",
-                "Hiếm": "🟡", 
-                "Rất hiếm": "🟠",
-                "Cực kỳ hiếm": "🔴",
-                "Đột biến độc nhất": "💎"
-            }
-            
-            st.markdown(f"""
-            <div style="border-left: 5px solid #00ffcc; padding-left: 20px;">
-                <h1 style="margin-bottom: 5px;">{plant_data['Tên Thương Mại']}</h1>
-                <h3 style="color: #88aaff; margin-top: 0;">
-                    {rarity_badge.get(plant_data['Độ Quý Hiếm'], '📌')} {plant_data['Tên Khoa Học']}
-                </h3>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Tabs chi tiết
-            tab1, tab2, tab3, tab4 = st.tabs(["📋 Thông Tin", "🌡️ Môi Trường", "⚕️ Chăm Sóc", "📝 Ghi Chú"])
-            
-            with tab1:
-                col_info1, col_info2 = st.columns(2)
-                
-                with col_info1:
-                    st.markdown("#### 🏷️ Thông tin cơ bản")
-                    st.write(f"**Môi trường:** {plant_data['Môi Trường Sống']}")
-                    st.write(f"**Chu kỳ sống:** {plant_data['Chu Kỳ Sống']}")
-                    st.write(f"**Tốc độ sinh trưởng:** {plant_data['Tốc Độ Sinh Trưởng']}")
-                    st.write(f"**Độ quý hiếm:** {plant_data['Độ Quý Hiếm']}")
-                
-                with col_info2:
-                    st.markdown("#### ⚠️ Lưu ý đặc biệt")
-                    st.write(f"**An toàn thú cưng:** {plant_data['Thú Cưng']}")
-                    st.write(f"**Thanh lọc không khí:** {plant_data['Thanh Lọc KK']}")
-                    st.write(f"**Độ ẩm đất:** {plant_data['Độ Ẩm Đất']}")
-                    st.write(f"**Độ pH:** {plant_data['Độ pH']}")
-            
-            with tab2:
-                col_env1, col_env2 = st.columns(2)
-                
-                with col_env1:
-                    st.markdown("#### 🌞 Điều kiện ánh sáng")
-                    light_info = plant_data['Ánh Sáng']
-                    if "Full" in light_info or "Trực tiếp" in light_info:
-                        st.success(f"**Cần nhiều ánh sáng:** {light_info}")
-                    elif "Bóng" in light_info or "Tán xạ" in light_info:
-                        st.info(f"**Ưa bóng râm:** {light_info}")
-                    else:
-                        st.info(f"**Ánh sáng:** {light_info}")
-                    
-                    # Visual indicator
-                    light_level = random.randint(30, 100)  # Simulate light level
-                    st.progress(light_level/100, text=f"Cường độ ánh sáng: {light_level}%")
-                
-                with col_env2:
-                    st.markdown("#### 🌡️ Nhiệt độ & Ẩm độ")
-                    temp_range = plant_data['Nhiệt Độ'].replace('°C', '').split('-')
-                    if len(temp_range) == 2:
-                        min_temp, max_temp = map(int, temp_range)
-                        optimal_temp = (min_temp + max_temp) // 2
-                        
-                        st.metric("Nhiệt độ tối ưu", f"{optimal_temp}°C")
-                        st.metric("Khoảng an toàn", f"{min_temp}°C - {max_temp}°C")
-                    
-                    # Humidity gauge
-                    humidity = random.randint(40, 90)
-                    st.progress(humidity/100, text=f"Độ ẩm lý tưởng: {humidity}%")
-            
-            with tab3:
-                st.markdown("#### 💧 Hướng dẫn chăm sóc")
-                
-                care_col1, care_col2 = st.columns(2)
-                
-                with care_col1:
-                    st.markdown("**Tưới nước:**")
-                    water_needs = plant_data['Nước (L/ngày)']
-                    if water_needs < 0.3:
-                        st.success("Ít nước (cây chịu hạn)")
-                    elif water_needs < 0.8:
-                        st.info("Vừa phải")
-                    else:
-                        st.warning("Nhiều nước")
-                    
-                    st.write(f"**Lượng nước:** {water_needs} L/ngày")
-                    st.write(f"**Tần suất bón:** {plant_data['Chế Độ Bón Phân']}")
-                
-                with care_col2:
-                    st.markdown("**Mẹo chăm sóc:**")
-                    tips = [
-                        "Không tưới quá nhiều vào mùa đông",
-                        "Thay chậu 1-2 năm/lần",
-                        "Cắt tỉa lá vàng thường xuyên",
-                        "Vệ sinh lá để tăng khả năng quang hợp",
-                        "Tránh di chuyển cây thường xuyên"
-                    ]
-                    
-                    for tip in random.sample(tips, 3):
-                        st.write(f"• {tip}")
-            
-            with tab4:
-                # User notes
-                plant_id = str(plant_data['ID'])
-                current_note = user_data['notes'].get(plant_id, "")
-                
-                new_note = st.text_area(
-                    "Ghi chú cá nhân về cây này:",
-                    value=current_note,
-                    height=150,
-                    placeholder="Ghi chú về lịch sử chăm sóc, vấn đề gặp phải, hoặc bất kỳ điều gì bạn muốn lưu ý..."
-                )
-                
-                if new_note != current_note:
-                    user_data['notes'][plant_id] = new_note
-                    if st.button("💾 Lưu ghi chú"):
-                        st.success("Đã lưu ghi chú!")
-                
-                # Recent activities (simulated)
-                st.markdown("#### 📅 Hoạt động gần đây")
-                activities = [
-                    f"**{random.choice(['Hôm nay', 'Hôm qua', '3 ngày trước'])}**: {random.choice(['Tưới nước', 'Bón phân', 'Kiểm tra sâu bệnh', 'Thay đất'])}",
-                    f"**Tuần trước**: {random.choice(['Cắt tỉa', 'Phun thuốc', 'Di chuyển vị trí'])}",
-                    f"**Tháng trước**: {random.choice(['Thay chậu', 'Nhân giống', 'Xử lý bệnh'])}"
-                ]
-                
-                for activity in activities:
-                    st.write(f"• {activity}")
-        
-        # Action buttons
-        st.markdown("---")
-        action_col1, action_col2, action_col3, action_col4 = st.columns(4)
-        
-        with action_col1:
-            if st.button("⭐ Thêm vào yêu thích", use_container_width=True):
-                if plant_data['ID'] not in user_data['favorites']:
-                    user_data['favorites'].append(plant_data['ID'])
-                    st.success("Đã thêm vào danh sách yêu thích!")
-                else:
-                    st.info("Cây đã có trong danh sách yêu thích")
-        
-        with action_col2:
-            if st.button("🌿 Thêm vào vườn", use_container_width=True):
-                if plant_data['ID'] not in user_data['garden']:
-                    user_data['garden'].append(plant_data['ID'])
-                    st.success("Đã thêm vào vườn của bạn!")
-                else:
-                    st.info("Cây đã có trong vườn")
-        
-        with action_col3:
-            if st.button("🖨️ In hồ sơ", use_container_width=True):
-                st.info("Tính năng in ấn đang được phát triển...")
-        
-        with action_col4:
-            share_text = f"Khám phá cây {plant_data['Tên Thương Mại']} trên EcoMind OS!"
-            st.write(f"**Chia sẻ:** {share_text}")
-
-# === TAB BÁC SĨ CÂY NÂNG CẤP ===
-elif selected == "🩺 Bác Sĩ Cây":
-    st.title("🤖 AI DIAGNOSTIC - BÁC SĨ THỰC VẬT THÔNG MINH")
-    
-    # Layout chính
-    col_diag1, col_diag2 = st.columns([2, 1])
-    
-    with col_diag1:
-        # Input triệu chứng
-        st.markdown("### 📝 Mô tả vấn đề của cây")
-        
-        symptom_tabs = st.tabs(["✍️ Mô tả bằng văn bản", "🎯 Chọn triệu chứng"])
-        
-        with symptom_tabs[0]:
-            problem = st.text_area(
-                "Mô tả chi tiết tình trạng cây:",
-                height=200,
-                placeholder="""Ví dụ:
-- Lá vàng từ mép vào trong
-- Xuất hiện đốm nâu trên lá
-- Rễ có mùi hôi, thối nhũn
-- Cây rụng lá nhiều
-- Thân mềm, không cứng cáp
-- Xuất hiện nấm trắng trên đất"""
-            )
-        
-        with symptom_tabs[1]:
-            symptoms = st.multiselect(
-                "Chọn các triệu chứng quan sát được:",
-                [
-                    "Lá vàng", "Lá nâu", "Lá rụng", "Lá cuộn", "Lá đốm",
-                    "Thân mềm", "Thân thối", "Rễ thối", "Rễ đen",
-                    "Nấm trắng", "Côn trùng", "Chậm lớn", "Không ra hoa"
-                ]
-            )
-            
-            if symptoms:
-                problem = "Triệu chứng: " + ", ".join(symptoms)
-        
-        # Thông tin bổ sung
-        with st.expander("➕ Thông tin bổ sung"):
-            col_add1, col_add2, col_add3 = st.columns(3)
-            
-            with col_add1:
-                plant_type = st.selectbox("Loại cây:", ["Cây trong nhà", "Cây ngoài trời", "Cây cảnh", "Cây ăn quả", "Hoa"])
-            
-            with col_add2:
-                environment = st.selectbox("Môi trường:", ["Phòng khách", "Ban công", "Sân vườn", "Văn phòng", "Nhà tắm"])
-            
-            with col_add3:
-                care_frequency = st.selectbox("Tần suất chăm sóc:", ["Hàng ngày", "2-3 ngày/lần", "Tuần/lần", "Thỉnh thoảng"])
-        
-        # Nút phân tích
-        analyze_btn = st.button("🔬 PHÂN TÍCH VỚI AI", type="primary", use_container_width=True)
-    
-    with col_diag2:
-        # Panel kết quả
-        st.markdown("### 📊 KẾT QUẢ PHÂN TÍCH")
-        
-        if analyze_btn and (problem or symptoms):
-            with st.spinner("🤖 AI đang phân tích triệu chứng..."):
-                time.sleep(2)
-                
-                # Mô phỏng phân tích AI
-                if "vàng" in problem.lower() and "lá" in problem.lower():
-                    diagnosis = {
-                        "bệnh": "🟡 THIẾU DINH DƯỠNG / ÚNG NƯỚC",
-                        "nguyên_nhan": "Lá vàng thường do thiếu sắt, magie hoặc rễ bị úng nước",
-                        "giai_doan": "Giai đoạn đầu",
-                        "do_lanh": 65,
-                        "khuyen_nghi": [
-                            "Kiểm tra độ ẩm đất - chỉ tưới khi đất khô 2-3cm bề mặt",
-                            "Bổ sung phân vi lượng (sắt, magie)",
-                            "Đảm bảo chậu có lỗ thoát nước",
-                            "Giảm 30% lượng nước tưới trong 1 tuần"
-                        ]
-                    }
-                elif "thối" in problem.lower() or "hôi" in problem.lower():
-                    diagnosis = {
-                        "bệnh": "🔴 THỐI RỄ (ROOT ROT)",
-                        "nguyên_nhan": "Nấm Pythium hoặc Phytophthora tấn công do đất ẩm ướt kéo dài",
-                        "giai_doan": "Giai đoạn nghiêm trọng",
-                        "do_lanh": 85,
-                        "khuyen_nghi": [
-                            "NGỪNG TƯỚI NGAY LẬP TỨC",
-                            "Thay toàn bộ đất, cắt bỏ rễ thối",
-                            "Xử lý rễ bằng thuốc Physan 20",
-                            "Trồng lại với đất mới, thoát nước tốt"
-                        ]
-                    }
-                elif "nấm" in problem.lower() or "trắng" in problem.lower():
-                    diagnosis = {
-                        "bệnh": "⚪ BỆNH PHẤN TRẮNG / NẤM ĐẤT",
-                        "nguyên_nhan": "Độ ẩm cao, thiếu ánh sáng, không khí không lưu thông",
-                        "giai_doan": "Giai đoạn trung bình",
-                        "do_lanh": 45,
-                        "khuyen_nghi": [
-                            "Giảm tưới nước, tăng cường thông gió",
-                            "Phun thuốc trị nấm (Neem oil hoặc baking soda)",
-                            "Loại bỏ phần bị nhiễm nấm",
-                            "Đưa cây ra nơi có ánh sáng"
-                        ]
-                    }
-                else:
-                    diagnosis = {
-                        "bệnh": "🔵 SỐC MÔI TRƯỜNG / STRESS",
-                        "nguyên_nhan": "Thay đổi đột ngột về nhiệt độ, ánh sáng hoặc vị trí",
-                        "giai_doan": "Giai đoạn nhẹ",
-                        "do_lanh": 30,
-                        "khuyen_nghi": [
-                            "Giữ cây ở vị trí ổn định",
-                            "Không thay đổi chế độ chăm sóc đột ngột",
-                            "Theo dõi trong 1 tuần",
-                            "Che chắn nếu có ánh nắng gắt"
-                        ]
-                    }
-                
-                # Hiển thị kết quả
-                st.success("✅ ĐÃ PHÂN TÍCH XONG!")
-                
-                # Container kết quả
-                with st.container(border=True):
-                    st.markdown(f"### {diagnosis['bệnh']}")
-                    
-                    st.markdown(f"**Nguyên nhân:** {diagnosis['nguyên_nhan']}")
-                    st.markdown(f"**Giai đoạn:** {diagnosis['giai_doan']}")
-                    
-                    # Độ lành
-                    st.progress(diagnosis['do_lanh']/100, 
-                              text=f"Độ lành bệnh dự kiến: {diagnosis['do_lanh']}%")
-                    
-                    # Khuyến nghị
-                    st.markdown("#### 💡 KHuyẾN NGHỊ XỬ LÝ:")
-                    for i, rec in enumerate(diagnosis['khuyen_nghi'], 1):
-                        st.write(f"{i}. {rec}")
-                    
-                    # Timeline recovery
-                    st.markdown("#### 📅 LỊCH TRÌNH PHỤC HỒI:")
-                    timeline = [
-                        ("24h đầu", "Ngưng tưới, quan sát"),
-                        ("3-5 ngày", "Áp dụng biện pháp xử lý"),
-                        ("1 tuần", "Bắt đầu cải thiện"),
-                        ("2-4 tuần", "Phục hồi hoàn toàn")
-                    ]
-                    
-                    for time, action in timeline:
-                        st.write(f"⏰ **{time}:** {action}")
-        
-        else:
-            # Placeholder khi chưa phân tích
-            st.info("""
-            **Hướng dẫn sử dụng:**
-            
-            1. Mô tả triệu chứng ở ô bên trái
-            2. Hoặc chọn triệu chứng từ danh sách
-            3. Nhấn nút **PHÂN TÍCH VỚI AI**
-            
-            **AI sẽ cung cấp:**
-            - Chẩn đoán bệnh
-            - Nguyên nhân
-            - Hướng xử lý chi tiết
-            - Lịch trình phục hồi
-            """)
-    
-    # Database triệu chứng
-    st.markdown("---")
-    st.markdown("### 📚 CƠ SỞ DỮ LIỆU BỆNH THỰC VẬT")
-    
-    # Tạo dataframe bệnh
-    diseases = [
-        ["Thối rễ", "Pythium spp.", "Rễ thối đen, mùi hôi", "Đất ẩm kéo dài", "Thay đất, cắt rễ thối"],
-        ["Phấn trắng", "Erysiphe", "Bột trắng trên lá", "Ẩm cao, thiếu nắng", "Phun sulfur, tăng thông gió"],
-        ["Đốm lá", "Cercospora", "Đốm nâu/vàng trên lá", "Nước đọng trên lá", "Cắt lá bệnh, phun thuốc"],
-        ["Rệp sáp", "Pseudococcidae", "Côn trùng trắng nhỏ", "Cây yếu, thiếu dinh dưỡng", "Xịt cồn/neem oil"],
-        ["Vàng lá", "Thiếu vi lượng", "Lá vàng gân xanh", "Đất nghèo dinh dưỡng", "Bổ sung phân vi lượng"]
-    ]
-    
-    df_diseases = pd.DataFrame(diseases, columns=["Bệnh", "Tác nhân", "Triệu chứng", "Nguyên nhân", "Xử lý"])
-    st.dataframe(df_diseases, use_container_width=True, hide_index=True)
-
-# === TAB VƯỜN CỦA TÔI ===
-elif selected == "🌿 Vườn Của Tôi":
-    st.title("🌿 VƯỜN CÂY CÁ NHÂN")
-    
-    if not user_data['garden'] and not user_data['favorites']:
-        st.warning("Vườn của bạn chưa có cây nào!")
-        st.info("Thêm cây vào vườn từ tab **Thư Viện** hoặc **Tra Cứu**")
     else:
-        # Tabs quản lý
-        tab_garden, tab_fav, tab_care = st.tabs(["🏡 Vườn cây", "⭐ Yêu thích", "📅 Lịch chăm sóc"])
+        # Hiển thị dạng thẻ
+        items_per_row = 4
         
-        with tab_garden:
-            if user_data['garden']:
-                st.markdown(f"### 🌱 Bạn đang có {len(user_data['garden'])} cây trong vườn")
-                
-                # Hiển thị cây trong vườn
-                garden_plants = df[df['ID'].isin(user_data['garden'])]
-                
-                for idx, plant in garden_plants.iterrows():
-                    with st.container(border=True):
-                        col_plant1, col_plant2, col_plant3 = st.columns([1, 2, 1])
-                        
-                        with col_plant1:
-                            st.image(
-                                f"https://source.unsplash.com/200x200/?{plant['Tên Thương Mại'].split()[0].lower()}-plant",
-                                use_container_width=True
-                            )
-                        
-                        with col_plant2:
-                            st.markdown(f"#### {plant['Tên Thương Mại']}")
-                            st.markdown(f"*{plant['Tên Khoa Học']}*")
-                            
-                            # Health status (simulated)
-                            health = random.randint(60, 100)
-                            if health > 85:
-                                status = "✅ Khỏe mạnh"
-                            elif health > 70:
-                                status = "⚠️ Cần quan tâm"
-                            else:
-                                status = "❌ Cần chăm sóc"
-                            
-                            st.progress(health/100, text=f"Sức khỏe: {health}% - {status}")
-                            
-                            # Next care date
-                            next_care = datetime.datetime.now() + datetime.timedelta(days=random.randint(1, 7))
-                            st.caption(f"⏰ Chăm sóc tiếp theo: {next_care.strftime('%d/%m/%Y')}")
-                        
-                        with col_plant3:
-                            if st.button("🗑️ Xóa", key=f"del_{plant['ID']}"):
-                                user_data['garden'].remove(plant['ID'])
-                                st.rerun()
-                            
-                            if st.button("📝 Ghi chú", key=f"note_{plant['ID']}"):
-                                st.session_state.edit_note = plant['ID']
-            else:
-                st.info("Chưa có cây nào trong vườn. Hãy thêm cây từ tab Thư Viện!")
+        plants_list = filtered_plants.head(12).to_dict('records')  # Giới hạn 12 cây
         
-        with tab_fav:
-            if user_data['favorites']:
-                st.markdown(f"### ❤️ {len(user_data['favorites'])} cây yêu thích")
-                
-                fav_plants = df[df['ID'].isin(user_data['favorites'])]
-                
-                # Grid view
-                items_per_row = 4
-                fav_items = fav_plants.head(12).to_dict('records')
-                
-                for i in range(0, len(fav_items), items_per_row):
-                    cols = st.columns(items_per_row)
-                    for col_idx, col in enumerate(cols):
-                        item_idx = i + col_idx
-                        if item_idx < len(fav_items):
-                            item = fav_items[item_idx]
-                            with col:
-                                with st.container(border=True):
-                                    st.image(
-                                        f"https://source.unsplash.com/150x150/?{item['Tên Thương Mại'].split()[0].lower()}",
-                                        use_container_width=True
-                                    )
-                                    st.caption(item['Tên Thương Mại'])
-                                    
-                                    if st.button("➕ Thêm vườn", key=f"add_{item['ID']}", use_container_width=True):
-                                        if item['ID'] not in user_data['garden']:
-                                            user_data['garden'].append(item['ID'])
-                                            st.success("Đã thêm!")
-            else:
-                st.info("Chưa có cây nào trong mục yêu thích")
-        
-        with tab_care:
-            st.markdown("### 📅 LỊCH CHĂM SÓC THÔNG MINH")
+        for i in range(0, len(plants_list), items_per_row):
+            cols = st.columns(items_per_row)
             
-            # Tạo lịch giả lập
-            care_schedule = []
-            today = datetime.datetime.now()
-            
-            for plant_id in user_data['garden'][:5]:  # Giới hạn 5 cây
-                plant = df[df['ID'] == plant_id].iloc[0]
-                
-                # Tạo các công việc
-                tasks = [
-                    {
-                        "task": "💧 Tưới nước",
-                        "frequency": random.choice(["Hàng ngày", "2 ngày/lần", "3 ngày/lần"]),
-                        "next_date": today + datetime.timedelta(days=random.randint(0, 3))
-                    },
-                    {
-                        "task": "🌿 Bón phân",
-                        "frequency": random.choice(["Tuần/lần", "2 tuần/lần", "Tháng/lần"]),
-                        "next_date": today + datetime.timedelta(days=random.randint(3, 7))
-                    },
-                    {
-                        "task": "✂️ Cắt tỉa",
-                        "frequency": "Tháng/lần",
-                        "next_date": today + datetime.timedelta(days=random.randint(10, 30))
-                    }
-                ]
-                
-                for task in tasks:
-                    care_schedule.append({
-                        "Cây": plant['Tên Thương Mại'],
-                        "Công việc": task['task'],
-                        "Tần suất": task['frequency'],
-                        "Ngày tiếp theo": task['next_date'].strftime('%d/%m/%Y'),
-                        "Ưu tiên": "🟢" if task['task'] == "💧 Tưới nước" else "🟡"
-                    })
-            
-            if care_schedule:
-                df_care = pd.DataFrame(care_schedule)
-                df_care = df_care.sort_values('Ngày tiếp theo')
-                
-                st.dataframe(
-                    df_care,
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                # Today's tasks
-                st.markdown("#### 📌 CÔNG VIỆC HÔM NAY")
-                today_tasks = [t for t in care_schedule 
-                              if datetime.datetime.strptime(t['Ngày tiếp theo'], '%d/%m/%Y').date() == today.date()]
-                
-                if today_tasks:
-                    for task in today_tasks:
+            for col_idx, col in enumerate(cols):
+                item_idx = i + col_idx
+                if item_idx < len(plants_list):
+                    plant = plants_list[item_idx]
+                    
+                    with col:
                         with st.container(border=True):
-                            st.markdown(f"**{task['Cây']}** - {task['Công việc']}")
-                            st.caption(f"Tần suất: {task['Tần suất']}")
+                            # Header với màu theo độ khó
+                            difficulty_colors = {
+                                "Rất dễ": "#4CAF50",
+                                "Dễ": "#8BC34A",
+                                "Trung bình": "#FFC107",
+                                "Khó": "#FF9800",
+                                "Rất khó": "#F44336"
+                            }
                             
-                            col_t1, col_t2 = st.columns(2)
-                            with col_t1:
-                                if st.button("✅ Hoàn thành", key=f"done_{task['Cây']}_{task['Công việc']}"):
-                                    st.success("Đã đánh dấu hoàn thành!")
-                            with col_t2:
-                                if st.button("⏰ Hoãn", key=f"delay_{task['Cây']}_{task['Công việc']}"):
-                                    st.info("Đã hoãn đến ngày mai")
-                else:
-                    st.success("🎉 Không có công việc nào cho hôm nay!")
-            else:
-                st.info("Thêm cây vào vườn để tạo lịch chăm sóc tự động")
+                            st.markdown(f"""
+                            <div style="border-left: 4px solid {difficulty_colors.get(plant['Độ khó chăm sóc'], '#00ffcc')}; 
+                                        padding-left: 10px; margin-bottom: 10px;">
+                                <strong>{plant['Tên Cây']}</strong>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Thông tin chính
+                            st.write(f"💧 **Nước:** {plant['Nước TB (L/ngày)']}L/ngày")
+                            st.write(f"⏳ **Hết nước:** ~{plant['TG bình hết nước (ngày)']} ngày")
+                            st.write(f"🏺 **Chậu:** {plant['Loại chậu đề xuất']}")
+                            
+                            # Action buttons
+                            if st.button("📝 Thêm vào lịch", key=f"add_{plant['ID']}", use_container_width=True):
+                                st.success(f"Đã thêm {plant['Tên Cây']} vào lịch!")
 
-# === TAB ANALYTICS NÂNG CẤP ===
-elif selected == "📊 Analytics":
-    st.title("📈 PHÂN TÍCH DỮ LIỆU NÂNG CAO")
+# === TAB CÀI ĐẶT ===
+elif selected == "⚙️ Cài Đặt":
+    st.title("⚙️ CÀI ĐẶT HỆ THỐNG")
     
-    # Analytics dashboard
-    tab_ana1, tab_ana2, tab_ana3 = st.tabs(["📊 Tổng quan", "📈 Xu hướng", "🔍 Phân tích chuyên sâu"])
-    
-    with tab_ana1:
-        st.markdown("### 📊 PHÂN TÍCH TỔNG THỂ")
-        
-        # Metrics row
-        m1, m2, m3, m4 = st.columns(4)
-        
-        with m1:
-            avg_price = df['Giá Dự Kiến (VND)'].mean()
-            st.metric("💰 Giá trung bình", f"{avg_price:,.0f} VND")
-        
-        with m2:
-            avg_survival = df['Tỉ Lệ Sống (%)'].mean()
-            st.metric("❤️ Tỉ lệ sống TB", f"{avg_survival:.1f}%")
-        
-        with m3:
-            indoor_count = len(df[df['Môi Trường Sống'] == 'Trong nhà'])
-            st.metric("🏠 Cây trong nhà", indoor_count)
-        
-        with m4:
-            pet_safe_percent = len(df[df['Thú Cưng'].str.contains('✅')]) / len(df) * 100
-            st.metric("🐕 An toàn thú cưng", f"{pet_safe_percent:.1f}%")
-        
-        # Biểu đồ chính
-        col_chart1, col_chart2 = st.columns(2)
-        
-        with col_chart1:
-            st.markdown("#### 📈 Phân bố theo môi trường")
-            env_dist = df['Môi Trường Sống'].value_counts()
-            
-            fig_env = px.bar(
-                x=env_dist.index,
-                y=env_dist.values,
-                color=env_dist.values,
-                color_continuous_scale="Viridis",
-                template="plotly_dark"
-            )
-            
-            fig_env.update_layout(
-                xaxis_title="Môi trường sống",
-                yaxis_title="Số lượng loài",
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='white')
-            )
-            
-            st.plotly_chart(fig_env, use_container_width=True)
-        
-        with col_chart2:
-            st.markdown("#### 💰 Phân phối giá")
-            
-            # Lấy mẫu cho biểu đồ mượt mà
-            sample_prices = df.sample(min(100, len(df)))['Giá Dự Kiến (VND)']
-            
-            fig_price = px.histogram(
-                sample_prices,
-                nbins=20,
-                color_discrete_sequence=['#00ffcc'],
-                template="plotly_dark"
-            )
-            
-            fig_price.update_layout(
-                xaxis_title="Giá (VND)",
-                yaxis_title="Số lượng loài",
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='white')
-            )
-            
-            st.plotly_chart(fig_price, use_container_width=True)
-    
-    with tab_ana2:
-        st.markdown("### 📈 XU HƯỚNG & DỰ BÁO")
-        
-        # Tạo dữ liệu giả cho xu hướng
-        dates = pd.date_range(end=datetime.datetime.now(), periods=12, freq='M')
-        trend_data = {
-            'Tháng': dates.strftime('%Y-%m'),
-            'Số loài mới': np.random.randint(50, 200, 12),
-            'Giá trung bình': np.random.randint(500000, 2000000, 12),
-            'Độ phổ biến': np.random.uniform(0.5, 0.95, 12)
-        }
-        
-        df_trend = pd.DataFrame(trend_data)
-        
-        # Biểu đồ xu hướng
-        fig_trend = px.line(
-            df_trend,
-            x='Tháng',
-            y=['Số loài mới', 'Giá trung bình'],
-            template="plotly_dark",
-            color_discrete_sequence=['#00ffcc', '#0088cc']
-        )
-        
-        fig_trend.update_layout(
-            title="Xu hướng phát triển database",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            )
-        )
-        
-        st.plotly_chart(fig_trend, use_container_width=True)
-        
-        # Dự báo
-        st.markdown("#### 🔮 DỰ BÁO THỊ TRƯỜNG")
-        
-        forecast_col1, forecast_col2, forecast_col3 = st.columns(3)
-        
-        with forecast_col1:
-            with st.container(border=True):
-                st.markdown("**Xu hướng nổi bật**")
-                st.success("Cây thanh lọc không khí +15%")
-                st.info("Cây mini +8%")
-                st.warning("Cây quý hiếm -5%")
-        
-        with forecast_col2:
-            with st.container(border=True):
-                st.markdown("**Mùa vụ**")
-                st.write("📈 **Mùa xuân:** Tăng trưởng mạnh")
-                st.write("📉 **Mùa hè:** Nhu cầu giảm")
-                st.write("📈 **Mùa thu:** Phục hồi")
-                st.write("📊 **Mùa đông:** Ổn định")
-        
-        with forecast_col3:
-            with st.container(border=True):
-                st.markdown("**Khuyến nghị**")
-                st.info("• Tập trung cây dễ chăm")
-                st.info("• Phát triển dòng cây mini")
-                st.info("• Mở rộng cây thủy canh")
-    
-    with tab_ana3:
-        st.markdown("### 🔍 PHÂN TÍCH CHUYÊN SÂU")
-        
-        # Correlation matrix (giả lập)
-        st.markdown("#### 🔗 MA TRẬN TƯƠNG QUAN")
-        
-        # Tạo dữ liệu correlation giả
-        corr_data = pd.DataFrame({
-            'Nước': df['Nước (L/ngày)'],
-            'Tỉ lệ sống': df['Tỉ Lệ Sống (%)'],
-            'Giá': np.log(df['Giá Dự Kiến (VND)']),
-            'Độ khó': pd.Categorical(df['Độ Khó']).codes
-        })
-        
-        corr_matrix = corr_data.corr()
-        
-        fig_corr = px.imshow(
-            corr_matrix,
-            text_auto=True,
-            aspect="auto",
-            color_continuous_scale="RdBu_r",
-            template="plotly_dark"
-        )
-        
-        fig_corr.update_layout(
-            title="Tương quan giữa các yếu tố",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white')
-        )
-        
-        st.plotly_chart(fig_corr, use_container_width=True)
-        
-        # Phân cụm (Clustering - giả lập)
-        st.markdown("#### 🎯 PHÂN NHÓM TỰ ĐỘNG")
-        
-        cluster_col1, cluster_col2 = st.columns(2)
-        
-        with cluster_col1:
-            st.markdown("**Nhóm 1: Cây dễ chăm**")
-            st.write("• Nhu cầu nước thấp")
-            st.write("• Tỉ lệ sống cao")
-            st.write("• Giá phổ thông")
-            st.metric("Số lượng", f"{random.randint(800, 1200):,}")
-        
-        with cluster_col2:
-            st.markdown("**Nhóm 2: Cây cao cấp**")
-            st.write("• Chăm sóc chuyên nghiệp")
-            st.write("• Độ quý hiếm cao")
-            st.write("• Giá trị lớn")
-            st.metric("Số lượng", f"{random.randint(200, 400):,}")
-
-# === TAB CẤU HÌNH NÂNG CẤP ===
-elif selected == "⚙️ Cấu Hình":
-    st.title("⚙️ HỆ THỐNG & CÀI ĐẶT")
-    
-    # Tabs cài đặt
-    tab_set1, tab_set2, tab_set3, tab_set4 = st.tabs(["🎨 Giao diện", "🔔 Thông báo", "🗃️ Dữ liệu", "ℹ️ Hệ thống"])
+    tab_set1, tab_set2, tab_set3 = st.tabs(["Cấu hình chung", "Tích hợp", "Hỗ trợ"])
     
     with tab_set1:
-        st.markdown("### 🎨 TÙY CHỈNH GIAO DIỆN")
+        st.markdown("### ⚙️ CẤU HÌNH HỆ THỐNG")
         
-        theme = st.selectbox(
-            "Chọn chủ đề:",
-            ["Dark Cyberpunk", "Light Mode", "Forest Green", "Ocean Blue", "Sunset Purple"]
-        )
+        col_conf1, col_conf2 = st.columns(2)
         
-        col_theme1, col_theme2 = st.columns(2)
+        with col_conf1:
+            st.markdown("**Đơn vị đo lường:**")
+            unit_system = st.radio("Hệ đơn vị:", ["Metric (m, L, °C)", "Imperial (ft, gal, °F)"])
+            date_format = st.selectbox("Định dạng ngày:", ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"])
         
-        with col_theme1:
-            primary_color = st.color_picker("Màu chính:", "#00ffcc")
-            font_size = st.slider("Cỡ chữ:", 12, 20, 14)
-            rounded_corners = st.toggle("Góc bo tròn", value=True)
+        with col_conf2:
+            st.markdown("**Hiển thị:**")
+            theme = st.selectbox("Giao diện:", ["Tối (mặc định)", "Sáng", "Tự động"])
+            language = st.selectbox("Ngôn ngữ:", ["Tiếng Việt", "English"])
         
-        with col_theme2:
-            animations = st.toggle("Hiệu ứng động", value=True)
-            compact_mode = st.toggle("Chế độ compact", value=False)
-            high_contrast = st.toggle("Độ tương phản cao", value=False)
-        
-        if st.button("💾 Áp dụng cài đặt", use_container_width=True):
-            st.success("Đã lưu cài đặt giao diện!")
-    
-    with tab_set2:
-        st.markdown("### 🔔 CÀI ĐẶT THÔNG BÁO")
-        
+        st.markdown("### 🔔 THÔNG BÁO")
         notif_col1, notif_col2 = st.columns(2)
         
         with notif_col1:
-            st.markdown("**Thông báo hệ thống**")
             email_notif = st.toggle("Email thông báo", value=True)
-            push_notif = st.toggle("Push notification", value=True)
-            care_reminders = st.toggle("Nhắc lịch chăm cây", value=True)
+            push_notif = st.toggle("Thông báo trình duyệt", value=True)
         
         with notif_col2:
-            st.markdown("**Tần suất**")
-            report_frequency = st.selectbox(
-                "Báo cáo hàng tuần:",
-                ["Không gửi", "Hàng tuần", "Hàng tháng", "Hàng quý"]
-            )
-            update_notif = st.toggle("Cập nhật database", value=True)
+            water_reminder = st.toggle("Nhắc tưới nước", value=True)
+            weather_alert = st.toggle("Cảnh báo thời tiết", value=True)
         
-        st.markdown("### 📧 CẤU HÌNH EMAIL")
-        email_address = st.text_input("Email nhận thông báo:", placeholder="your.email@example.com")
+        if st.button("💾 Lưu cài đặt", type="primary", use_container_width=True):
+            st.success("Đã lưu cài đặt!")
+    
+    with tab_set2:
+        st.markdown("### 🔗 TÍCH HỢP BÊN THỨ BA")
         
-        if st.button("💾 Lưu cài đặt thông báo", use_container_width=True):
-            st.success("Đã lưu cài đặt thông báo!")
+        st.info("""
+        **Lưu ý:** Vì chậu cây không có linh kiện điện tử, 
+        hệ thống dựa hoàn toàn vào dữ liệu vị trí và thời tiết.
+        """)
+        
+        # Tích hợp Google Maps
+        st.markdown("#### 🗺️ Google Maps Integration")
+        
+        maps_api_key = st.text_input("Google Maps API Key (tùy chọn):", 
+                                    type="password",
+                                    placeholder="Nhập key để bật tính năng nâng cao")
+        
+        if maps_api_key:
+            st.success("✅ Đã kết nối Google Maps API")
+            st.caption("Có thể xem bản đồ trực tiếp và chỉ đường")
+        else:
+            st.warning("⚠️ Chỉ sử dụng bản đồ tĩnh")
+        
+        # Tích hợp thời tiết
+        st.markdown("#### 🌦️ Weather API")
+        
+        weather_source = st.selectbox(
+            "Nguồn dữ liệu thời tiết:",
+            ["Mô phỏng (mặc định)", "OpenWeatherMap", "WeatherAPI.com"]
+        )
+        
+        if weather_source != "Mô phỏng (mặc định)":
+            weather_api_key = st.text_input(f"{weather_source} API Key:", type="password")
+            
+            if weather_api_key:
+                st.success(f"✅ Đã kết nối {weather_source}")
+            else:
+                st.error("⚠️ Vui lòng nhập API Key")
     
     with tab_set3:
-        st.markdown("### 🗃️ QUẢN LÝ DỮ LIỆU")
+        st.markdown("### 🆘 HỖ TRỢ & TÀI NGUYÊN")
         
-        data_col1, data_col2 = st.columns(2)
+        st.markdown("""
+        **📚 Tài liệu hướng dẫn:**
+        - [Hướng dẫn sử dụng cơ bản](https://ecomind.com/docs)
+        - [Cách lấy tọa độ từ Google Maps](https://ecomind.com/coordinates)
+        - [Tính toán nhu cầu nước](https://ecomind.com/water-calculation)
         
-        with data_col1:
-            st.markdown("**Tự động sao lưu**")
-            auto_backup = st.toggle("Tự động sao lưu", value=True)
-            backup_freq = st.selectbox(
-                "Tần suất sao lưu:",
-                ["Hàng ngày", "Hàng tuần", "Hàng tháng"]
-            )
-            
-            st.markdown("**Xuất dữ liệu**")
-            export_format = st.radio(
-                "Định dạng xuất:",
-                ["CSV", "Excel", "JSON", "Tất cả"]
-            )
+        **📞 Liên hệ hỗ trợ:**
+        - Email: support@ecomind.com
+        - Hotline: 1800-1234
+        - Giờ làm việc: 8:00-17:00 (Thứ 2-Thứ 6)
         
-        with data_col2:
-            st.markdown("**Dọn dẹp**")
-            cache_days = st.slider("Xóa cache cũ (ngày):", 1, 365, 30)
-            
-            if st.button("🧹 Dọn dẹp cache", use_container_width=True):
-                st.cache_data.clear()
-                st.success("Đã dọn dẹp cache!")
-            
-            st.markdown("**Khôi phục**")
-            backup_file = st.file_uploader("Chọn file backup:", type=['csv', 'json'])
-            
-            if backup_file and st.button("🔄 Khôi phục", use_container_width=True):
-                st.info("Tính năng đang phát triển...")
+        **🔄 Cập nhật hệ thống:**
+        - Phiên bản hiện tại: 2.0.0
+        - Cập nhật cuối: 15/01/2024
+        - Phiên bản tiếp theo: 2.1.0 (dự kiến 15/02/2024)
+        """)
         
-        # Backup now button
-        if st.button("💾 Sao lưu ngay", type="primary", use_container_width=True):
-            with st.spinner("Đang sao lưu dữ liệu..."):
-                time.sleep(2)
-                st.success("✅ Sao lưu hoàn tất!")
-    
-    with tab_set4:
-        st.markdown("### ℹ️ THÔNG TIN HỆ THỐNG")
+        # Kiểm tra cập nhật
+        if st.button("🔍 Kiểm tra cập nhật", use_container_width=True):
+            st.info("✅ Bạn đang sử dụng phiên bản mới nhất!")
         
-        sys_info_col1, sys_info_col2 = st.columns(2)
+        # Xuất dữ liệu
+        st.markdown("### 📤 XUẤT DỮ LIỆU")
         
-        with sys_info_col1:
-            st.markdown("**Phiên bản**")
-            st.write(f"**EcoMind OS:** v8.5.1 Enterprise")
-            st.write(f"**Streamlit:** {st.__version__}")
-            st.write(f"**Pandas:** {pd.__version__}")
-            st.write(f"**Cập nhật cuối:** 2024-01-15")
+        export_format = st.selectbox("Định dạng xuất:", ["CSV", "Excel", "JSON"])
         
-        with sys_info_col2:
-            st.markdown("**Tài nguyên**")
-            
-            # Simulated resource usage
-            cpu_usage = random.randint(15, 45)
-            memory_usage = random.randint(40, 75)
-            disk_usage = random.randint(60, 85)
-            
-            st.progress(cpu_usage/100, text=f"CPU: {cpu_usage}%")
-            st.progress(memory_usage/100, text=f"RAM: {memory_usage}%")
-            st.progress(disk_usage/100, text=f"Disk: {disk_usage}%")
-        
-        st.markdown("---")
-        st.markdown("#### ⚠️ HÀNH ĐỘNG NGUY HIỂM")
-        
-        danger_col1, danger_col2, danger_col3 = st.columns(3)
-        
-        with danger_col1:
-            if st.button("🔄 Khởi động lại", use_container_width=True):
-                st.warning("Hệ thống sẽ khởi động lại...")
-                time.sleep(1)
-                st.rerun()
-        
-        with danger_col2:
-            if st.button("🗑️ Xóa dữ liệu", use_container_width=True):
-                st.error("Tính năng này sẽ xóa tất cả dữ liệu!")
-        
-        with danger_col3:
-            if st.button("🔒 Đăng xuất", use_container_width=True):
-                st.info("Đang đăng xuất...")
-                time.sleep(1)
-                st.rerun()
-        
-        # System logs (simulated)
-        st.markdown("---")
-        with st.expander("📋 NHẬT KÝ HỆ THỐNG"):
-            logs = [
-                f"[{datetime.datetime.now().strftime('%H:%M:%S')}] INFO: System started",
-                f"[{(datetime.datetime.now() - datetime.timedelta(minutes=5)).strftime('%H:%M:%S')}] INFO: Database loaded successfully",
-                f"[{(datetime.datetime.now() - datetime.timedelta(minutes=15)).strftime('%H:%M:%S')}] INFO: User session started",
-                f"[{(datetime.datetime.now() - datetime.timedelta(minutes=30)).strftime('%H:%M:%S')}] WARNING: Cache cleared",
-                f"[{(datetime.datetime.now() - datetime.timedelta(hours=1)).strftime('%H:%M:%S')}] INFO: Backup completed"
-            ]
-            
-            for log in logs:
-                st.code(log)
+        if st.button("📥 Xuất toàn bộ dữ liệu", use_container_width=True):
+            if export_format == "CSV":
+                csv = df_plants.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Tải xuống CSV",
+                    data=csv,
+                    file_name="ecomind_plant_database.csv",
+                    mime="text/csv"
+                )
+            elif export_format == "Excel":
+                # Tạo Excel file
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_plants.to_excel(writer, index=False, sheet_name='Plants')
+                excel_data = output.getvalue()
+                
+                st.download_button(
+                    label="Tải xuống Excel",
+                    data=excel_data,
+                    file_name="ecomind_plant_database.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:  # JSON
+                json_data = df_plants.to_json(orient='records', force_ascii=False)
+                st.download_button(
+                    label="Tải xuống JSON",
+                    data=json_data,
+                    file_name="ecomind_plant_database.json",
+                    mime="application/json"
+                )
 
-# --- 6. FOOTER ---
+# --- 9. FOOTER ---
 st.markdown("---")
+
 footer_col1, footer_col2, footer_col3 = st.columns(3)
 
 with footer_col1:
-    st.markdown("**© 2024 EcoMind OS**")
-    st.caption("Enterprise Edition v8.5.1")
+    st.markdown("**🌿 EcoMind System**")
+    st.caption("Hệ thống dự báo chăm sóc cây thông minh")
 
 with footer_col2:
-    st.markdown("**📞 Hỗ trợ**")
-    st.caption("support@ecomind.com")
+    st.markdown("**♻️ Sản phẩm xanh**")
+    st.caption("Chậu cây tái chế 100%")
 
 with footer_col3:
-    st.markdown("**🌐 Kết nối**")
-    st.caption("GitHub | Discord | LinkedIn")
+    st.markdown("**📞 Liên hệ**")
+    st.caption("contact@ecomind.com")
 
-# Sidebar footer
-with st.sidebar:
-    st.markdown("---")
-    st.caption(f"© 2024 EcoMind OS • {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}")
+# Hiển thị phiên bản và thời gian
+current_time = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+st.caption(f"Phiên bản 2.0.0 • {current_time} • © 2024 EcoMind")
