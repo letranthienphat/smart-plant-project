@@ -3,73 +3,64 @@ import pandas as pd
 import plotly.express as px
 from streamlit_option_menu import option_menu
 import wikipedia
-import requests
 import random
 import time
 
-# --- 1. CẤU HÌNH & GIAO DIỆN ---
-st.set_page_config(page_title="EcoMind OS - Enterprise", layout="wide", page_icon="🔐")
+# --- 1. CẤU HÌNH & CSS NEON (GIỮ NGUYÊN STYLE ĐẸP) ---
+st.set_page_config(page_title="EcoMind OS - Professional", layout="wide", page_icon="🌿")
 wikipedia.set_lang("vi")
 
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: white; }
     div[data-testid="stMetricValue"] { color: #00ffcc !important; font-weight: bold; }
-    h1, h2, h3 { color: #00ffcc !important; }
+    .success-text { color: #00ffcc; font-weight: bold; padding: 10px; border: 1px solid #00ffcc; border-radius: 5px; }
     .stButton>button { border-radius: 5px; background-color: #1f2937; color: #00ffcc; border: 1px solid #00ffcc; width: 100%; }
     .stButton>button:hover { background-color: #00ffcc; color: black; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. DỮ LIỆU & LOGIC ---
+# --- 2. HÀM XỬ LÝ DỮ LIỆU ---
 @st.cache_data
 def get_plant_db():
-    loai = ["Hoa Hồng", "Lan Hồ Điệp", "Xương Rồng", "Trầu Bà", "Sen Đá", "Kim Tiền", "Lưỡi Hổ"]
-    data = []
-    for i, name in enumerate(loai):
-        data.append({"ID": i, "Tên Cây": name, "Nhu cầu": round(random.uniform(0.1, 0.8), 2)})
-    return pd.DataFrame(data)
+    loai = ["Hoa Hồng", "Lan Hồ Điệp", "Xương Rồng", "Trầu Bà", "Sen Đá", "Kim Tiền", "Lưỡi Hổ", "Bàng Singapore"]
+    return pd.DataFrame([{"ID": i, "Tên Cây": n, "Nhu cầu": round(random.uniform(0.1, 0.9), 2)} for i, n in enumerate(loai)])
 
-def strict_wiki_search(query):
-    try:
-        results = wikipedia.search(f"Cây {query}")
-        if results:
-            page = wikipedia.page(results[0])
-            # FIX LỖI IMAGE TYPEERROR: Kiểm tra xem có ảnh không
-            img_url = page.images[0] if (hasattr(page, 'images') and len(page.images) > 0) else None
-            return {
-                "found": True, "title": page.title,
-                "summary": wikipedia.summary(results[0], sentences=3),
-                "url": page.url, "img": img_url
-            }
-    except: pass
-    return {"found": False}
-
-# --- 3. HỆ THỐNG ĐĂNG NHẬP / ĐĂNG KÝ ---
+# --- 3. HỆ THỐNG QUẢN LÝ TÀI KHOẢN ---
 def auth_system():
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-
-    if not st.session_state.logged_in:
-        col1, col2, col3 = st.columns([1, 1.5, 1])
+    if 'auth_status' not in st.session_state:
+        st.session_state.auth_status = None # None, 'logged_in', 'guest'
+    
+    if st.session_state.auth_status is None:
+        col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.title("🔐 EcoMind Portal")
-            tab_login, tab_reg = st.tabs(["Đăng nhập", "Đăng ký mới"])
+            st.title("🌿 Hệ Thống Quản Lý Cây Trồng")
+            tab_login, tab_reg, tab_guest = st.tabs(["Đăng nhập", "Đăng ký", "Khách"])
             
             with tab_login:
-                user = st.text_input("Tên đăng nhập")
-                pw = st.text_input("Mật khẩu", type="password")
-                if st.button("Truy cập hệ thống"):
-                    if user == "admin" and pw == "123": # Demo
-                        st.session_state.logged_in = True
+                u = st.text_input("Tên đăng nhập")
+                p = st.text_input("Mật khẩu", type="password")
+                if st.button("Đăng nhập"):
+                    if u == "admin" and p == "123":
+                        st.session_state.auth_status = 'logged_in'
                         st.rerun()
-                    else: st.error("Sai thông tin!")
+                    else: st.error("Tên đăng nhập hoặc mật khẩu không đúng.")
             
             with tab_reg:
-                st.text_input("Email")
-                st.text_input("Tạo Username")
-                st.text_input("Tạo Password", type="password")
-                st.button("Tạo tài khoản VIP")
+                new_u = st.text_input("Chọn tên đăng nhập")
+                new_p = st.text_input("Chọn mật khẩu", type="password")
+                if st.button("Tạo tài khoản"):
+                    if new_u and new_p:
+                        # Giả lập đăng ký thành công
+                        st.markdown("<p class='success-text'>✅ Đăng ký hoàn tất! Bạn có thể chuyển sang tab Đăng nhập.</p>", unsafe_allow_html=True)
+                        st.balloons()
+                    else: st.warning("Vui lòng điền đầy đủ thông tin.")
+            
+            with tab_guest:
+                st.info("Chế độ khách cho phép trải nghiệm nhanh các tính năng cơ bản.")
+                if st.button("Tiếp tục với quyền Khách"):
+                    st.session_state.auth_status = 'guest'
+                    st.rerun()
         return False
     return True
 
@@ -77,74 +68,93 @@ def auth_system():
 if auth_system():
     db = get_plant_db()
     
-    # --- TÍNH NĂNG CHỌN CÂY LẦN ĐẦU (ONBOARDING) ---
+    # Bước Onboarding (Chọn cây lần đầu)
     if 'my_plant' not in st.session_state:
-        st.balloons()
-        st.title("🌱 Chào mừng VIP User!")
-        st.subheader("Hãy thiết lập chậu cây đầu tiên của bạn")
-        
+        st.title("⚙️ Thiết lập ban đầu")
         c1, c2 = st.columns(2)
         with c1:
-            choice = st.selectbox("Chọn loài cây bạn đang trồng:", db["Tên Cây"])
+            choice = st.selectbox("Chọn loại cây của bạn:", db["Tên Cây"])
         with c2:
-            water = st.number_input("Lượng nước hiện có trong bình (Lít):", min_value=0.1, max_value=10.0, value=2.0)
+            water = st.number_input("Lượng nước hiện tại trong bình (Lít):", 0.0, 20.0, 5.0)
         
-        if st.button("Bắt đầu giám sát ngay"):
+        if st.button("Xác nhận và vào Dashboard"):
             st.session_state.my_plant = db[db["Tên Cây"] == choice].iloc[0].to_dict()
             st.session_state.current_water = water
+            st.session_state.history = [] # Lưu lịch sử tưới
             st.rerun()
             
     else:
-        # SIDEBAR MENU
+        # SIDEBAR
         with st.sidebar:
-            st.title("ECO-MIND OS")
-            selected = option_menu(None, ["Dashboard", "Tra cứu Wiki", "Vị trí", "Cài đặt"], 
-                icons=['cpu', 'search', 'map', 'gear'], default_index=0)
-            if st.button("Đăng xuất"):
-                st.session_state.logged_in = False
+            st.title("ECO-MIND")
+            menu = option_menu(None, ["Giám sát", "Lịch sử & VIP", "Tra cứu", "Vị trí"], 
+                icons=['activity', 'graph-up-arrow', 'search', 'geo'], default_index=0)
+            
+            if st.button("🚪 Đăng xuất"):
+                st.session_state.auth_status = None
                 del st.session_state.my_plant
                 st.rerun()
 
-        # === TAB DASHBOARD ===
-        if selected == "Dashboard":
-            st.title(f"📊 Giám sát: {st.session_state.my_plant['Tên Cây']}")
+        # === TAB 1: GIÁM SÁT (DASHBOARD) ===
+        if menu == "Giám sát":
+            st.header(f"📊 Dashboard: {st.session_state.my_plant['Tên Cây']}")
             
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Nước còn lại", f"{st.session_state.current_water:.2f} L")
-            col2.metric("Nhu cầu", f"{st.session_state.my_plant['Nhu cầu']} L/ngày")
+            # Tự động hóa lấy thời tiết giả lập
+            temp = random.randint(25, 35)
+            hum = random.randint(40, 80)
             
-            # Tính toán tự động
-            days_left = st.session_state.current_water / st.session_state.my_plant['Nhu cầu']
-            col3.metric("Dự kiến hết nước", f"{days_left:.1f} ngày")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Nước hiện tại", f"{st.session_state.current_water:.2f} L")
+            m2.metric("Nhiệt độ (Auto)", f"{temp} °C")
+            m3.metric("Độ ẩm (Auto)", f"{hum} %")
             
-            # Cập nhật nước thủ công
-            new_water = st.slider("Cập nhật lại lượng nước thực tế (nhập tay):", 0.0, 10.0, float(st.session_state.current_water))
-            if st.button("Lưu thông số nước"):
-                st.session_state.current_water = new_water
-                st.toast("Đã cập nhật dữ liệu nước!")
+            st.divider()
+            st.subheader("🛠️ Cập nhật thông số thủ công")
+            updated_water = st.number_input("Cập nhật lại mực nước (Lít):", value=float(st.session_state.current_water))
+            if st.button("Cập nhật hệ thống"):
+                # Lưu vào lịch sử trước khi cập nhật
+                st.session_state.history.append({"Thời gian": time.strftime("%H:%M:%S"), "Lượng nước": updated_water})
+                st.session_state.current_water = updated_water
+                st.success("Dữ liệu đã được đồng bộ.")
 
-        # === TAB TRA CỨU WIKI (ĐÃ FIX LỖI) ===
-        elif selected == "Tra cứu Wiki":
-            st.title("🔍 Bách khoa thực vật")
-            query = st.text_input("Tìm tên cây:")
-            if query:
-                res = strict_wiki_search(query)
-                if res["found"]:
-                    st.subheader(res["title"])
-                    # FIX LỖI Ở ĐÂY: Kiểm tra URL ảnh trước khi hiện
-                    if res["img"]:
-                        st.image(res["img"], width=400)
-                    else:
-                        st.info("Loài này không có ảnh trên Wiki.")
-                    st.write(res["summary"])
-                else:
-                    st.error("Không tìm thấy thông tin thực vật phù hợp.")
+        # === TAB 2: LỊCH SỬ & VIP (TÍNH NĂNG NÂNG CAO) ===
+        elif menu == "Lịch sử & VIP":
+            st.header("💎 Tính năng Quản lý Chuyên sâu")
+            
+            if not st.session_state.history:
+                st.info("Chưa có dữ liệu lịch sử. Hãy cập nhật nước ở Dashboard.")
+            else:
+                col_a, col_b = st.columns([2, 1])
+                with col_a:
+                    st.subheader("Biểu đồ tiêu thụ nước")
+                    h_df = pd.DataFrame(st.session_state.history)
+                    fig = px.line(h_df, x="Thời gian", y="Lượng nước", markers=True, template="plotly_dark")
+                    fig.update_traces(line_color='#00ffcc')
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col_b:
+                    st.subheader("Xuất báo cáo")
+                    st.write("Tải dữ liệu chăm sóc về máy (.csv)")
+                    csv = h_df.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Tải báo cáo", data=csv, file_name="plant_report.csv", mime="text/csv")
 
-        # === TAB VỊ TRÍ ===
-        elif selected == "Vị trí":
-            st.title("📍 Định vị vườn")
-            city = st.text_input("Nhập thành phố:", "Hanoi")
-            # Tự động lấy tọa độ đơn giản
-            if city:
-                st.map(pd.DataFrame({'lat': [21.0285], 'lon': [105.8542]})) # Demo
-                st.info("Vị trí của bạn được đồng bộ tự động với trạm thời tiết gần nhất.")
+        # === TAB 3: TRA CỨU (FIXED WIKI) ===
+        elif menu == "Tra cứu":
+            st.header("🔍 Tra cứu từ Wikipedia")
+            q = st.text_input("Nhập tên loài cây cần tra cứu:")
+            if q:
+                try:
+                    res = wikipedia.page(f"Cây {q}")
+                    st.subheader(res.title)
+                    if res.images: st.image(res.images[0], width=400)
+                    st.write(wikipedia.summary(f"Cây {q}", sentences=4))
+                except:
+                    st.error("Không tìm thấy thông tin hoặc có quá nhiều kết quả trùng lặp.")
+
+        # === TAB 4: VỊ TRÍ ===
+        elif menu == "Vị trí":
+            st.header("📍 Vị trí thiết bị")
+            st.write("Tự động xác định vị trí qua IP...")
+            # Demo vị trí
+            st.map(pd.DataFrame({'lat': [10.762622], 'lon': [106.660172]}))
+            st.caption("Vị trí: Quận 10, TP. Hồ Chí Minh (Giả lập)")
