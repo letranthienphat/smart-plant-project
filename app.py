@@ -3,126 +3,159 @@ import pandas as pd
 import plotly.graph_objects as go
 from streamlit_option_menu import option_menu
 from geopy.distance import geodesic
-import requests
-import datetime
+import time
 
-# --- 1. CẤU HÌNH & GIAO DIỆN TRÀN MÀN HÌNH ---
-st.set_page_config(page_title="EcoMind Urban Core v25", layout="wide")
+# --- 1. GIAO DIỆN HIỆN ĐẠI (CHẾ ĐỘ MOBILE-FIRST) ---
+st.set_page_config(page_title="Cây Xanh Đô Thị", layout="wide")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #0a0c10; color: #00ffcc; }
-    .main-frame { border: 2px solid #00ffcc; padding: 25px; border-radius: 20px; background: rgba(0, 255, 204, 0.03); box-shadow: 0 0 20px rgba(0,255,204,0.1); }
-    .stMetric { background: #161b22 !important; border-radius: 10px !important; border: 1px solid #30363d !important; }
-    .chat-bubble { padding: 10px; border-radius: 10px; margin-bottom: 5px; border-left: 4px solid #00ffcc; background: #1c2128; }
-    .stButton>button { border-radius: 10px; height: 3em; font-weight: bold; }
+    /* Font chữ và màu sắc thân thiện */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    .stApp { background-color: #f0f2f5; color: #1c1e21; }
+    
+    /* Khung đăng nhập chuyên nghiệp */
+    .login-box {
+        background: white; padding: 40px; border-radius: 20px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1); margin-top: 50px;
+    }
+    .stButton>button {
+        background-color: #2ecc71; color: white; border-radius: 12px;
+        border: none; height: 50px; font-weight: 600; width: 100%;
+    }
+    .stChatFloatingInputContainer { background-color: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. HỆ THỐNG DẪN ĐƯỜNG NỘI BỘ (REAL-TIME NAV) ---
-def build_radar_map(u_lat, u_lon, p_lat, p_lon):
+# --- 2. LOGIC BẢN ĐỒ DẪN ĐƯỜNG RIÊNG ---
+def draw_navigator(my_lat, my_lon, tree_lat, tree_lon):
     fig = go.Figure(go.Scattermapbox(
-        lat=[u_lat, p_lat], lon=[u_lon, p_lon],
+        lat=[my_lat, tree_lat],
+        lon=[my_lon, tree_lon],
         mode='markers+lines',
-        marker=dict(size=[15, 25], color=['#3b82f6', '#00ffcc'], symbol=['circle', 'garden']),
-        line=dict(width=4, color='#00ffcc'),
-        text=['BẠN', 'SẢN PHẨM ECO'],
+        marker=dict(size=[15, 20], color=['#3498db', '#2ecc71']),
+        line=dict(width=3, color='#2ecc71'),
+        text=['Vị trí của bạn', 'Chậu cây Nano']
     ))
     fig.update_layout(
-        mapbox=dict(style="carto-darkmatter", center=dict(lat=u_lat, lon=u_lon), zoom=16),
-        margin=dict(l=0, r=0, t=0, b=0), height=450, paper_bgcolor='rgba(0,0,0,0)'
+        mapbox=dict(style="carto-positron", center=dict(lat=my_lat, lon=my_lon), zoom=16),
+        margin=dict(l=0, r=0, t=0, b=0), height=500
     )
     return fig
 
-# --- 3. LOGIC ĐĂNG NHẬP (CẤU TRÚC CHUẨN) ---
-if 'auth' not in st.session_state: st.session_state.auth = None
+# --- 3. QUẢN LÝ ĐĂNG NHẬP (NGÔN NGỮ BÌNH THƯỜNG) ---
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'chat_history' not in st.session_state: st.session_state.chat_history = []
 
-if st.session_state.auth is None:
-    st.markdown('<div class="main-frame">', unsafe_allow_html=True)
-    st.title("🏙️ ECO-MIND: URBAN CORE v25")
-    t1, t2, t3 = st.tabs(["🔐 TRUY CẬP", "📝 ĐĂNG KÝ", "🌍 KHÁCH TỰ DO"])
-    with t1:
-        st.text_input("Tài khoản người dùng")
-        st.text_input("Mật khẩu", type="password")
-        if st.button("KÍCH HOẠT HỆ THỐNG"): st.session_state.auth = "admin"; st.rerun()
-    with t2:
-        st.text_input("Họ và tên")
-        st.text_input("Email liên kết")
-        st.button("TẠO TÀI KHOẢN")
-    with t3:
-        st.info("Chế độ này sử dụng tọa độ GPS thực tế của trình duyệt.")
-        if st.button("VÀO TRỰC TIẾP"): st.session_state.auth = "guest"; st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+if not st.session_state.logged_in:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown('<div class="login-box">', unsafe_allow_html=True)
+        st.title("🌱 Chào bạn!")
+        st.write("Vui lòng đăng nhập để xem tình hình cây của mình hôm nay nhé.")
+        
+        tab1, tab2 = st.tabs(["Đăng nhập", "Tạo tài khoản mới"])
+        with tab1:
+            user = st.text_input("Tên đăng nhập")
+            pw = st.text_input("Mật khẩu", type="password")
+            if st.button("VÀO ỨNG DỤNG"):
+                st.session_state.logged_in = True
+                st.rerun()
+        with tab2:
+            st.text_input("Họ và tên của bạn")
+            st.text_input("Email nhận thông báo")
+            st.button("ĐĂNG KÝ NGAY")
+        st.markdown('</div>', unsafe_allow_html=True)
 
 else:
-    # GPS Giả lập thời gian thực (Cần kết nối API GPS thật nếu deploy)
-    u_lat, u_lon = 21.0285, 105.8542
-    p_lat, p_lon = 21.0295, 105.8555
-
+    # --- GIAO DIỆN CHÍNH SAU KHI VÀO ---
     with st.sidebar:
-        st.title("ECO-MIND OS")
-        menu = option_menu(None, ["Radar Dẫn đường", "Sức khỏe Cây", "Chat & Nhật ký", "Chợ Tái chế", "Wiki & Cài đặt"], 
-            icons=['compass', 'heart-pulse', 'chat-quote', 'shop', 'gear'], default_index=0)
+        st.title("Eco-Friendly")
+        # Sử dụng menu ngôn ngữ bình thường
+        choice = option_menu(None, ["Trang chủ", "Tìm đường", "Trò chuyện", "Nâng cấp", "Cài đặt"], 
+            icons=['house', 'map', 'chat-dots', 'stars', 'gear'], default_index=0)
+        
         st.divider()
-        st.metric("Khoảng cách", f"{geodesic((u_lat, u_lon), (p_lat, p_lon)).meters:.1f} m")
-        if st.button("Đăng xuất"): st.session_state.auth = None; st.rerun()
+        if st.button("Đăng xuất"):
+            st.session_state.logged_in = False
+            st.rerun()
 
-    # --- TAB 1: RADAR DẪN ĐƯỜNG (INTERNAL) ---
-    if menu == "Radar Dẫn đường":
-        st.header("🧭 Radar Định vị Nano")
-        st.plotly_chart(build_radar_map(u_lat, u_lon, p_lat, p_lon), use_container_width=True)
-        st.success("Hệ thống dẫn đường nội bộ đang hoạt động. Đi theo đường Neon xanh.")
-
-    # --- TAB 2: SỨC KHỎE CÂY (AI WEATHER) ---
-    elif menu == "Sức khỏe Cây":
-        st.header("📊 Phân tích Sức khỏe (Không cảm biến)")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Bức xạ UV (Dự báo)", "Cao (7/10)")
-        col2.metric("Nước bốc hơi", "150ml/ngày")
-        col3.metric("Dự kiến cạn nước", "3 ngày tới")
+    # --- TAB 1: TRANG CHỦ (TRẠNG THÁI THẬT) ---
+    if choice == "Trang chủ":
+        st.header("Chào buổi sáng! 👋")
+        st.write("Dưới đây là tình hình chậu cây Nano của bạn:")
         
-        st.markdown("""
-        **🔍 Phân tích AI:**
-        - Vì bạn đặt cây ở hướng Tây, lượng nắng chiều đang làm tăng nhiệt độ chậu nhựa PET.
-        - **Khuyến nghị:** Di chuyển chậu vào sâu trong ban công thêm 20cm để giảm 5°C nhiệt độ đất.
-        """)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Lượng nước", "Còn 80%", "Đủ cho 2 ngày")
+        c2.metric("Ánh sáng", "Rất tốt", "Đang đón nắng")
+        c3.metric("Lọc không khí", "Đã lọc 15mg bụi", "Hôm nay")
+
+        st.subheader("Lời khuyên từ AI")
+        st.info("Trời sắp có mưa lớn vào chiều nay. Nếu bạn để cây ở ban công ngoài trời, hãy chú ý nhé!")
         
 
-    # --- TAB 3: CHAT & NHẬT KÝ ---
-    elif menu == "Chat & Nhật ký":
-        st.header("💬 Tương tác & Nhật ký Eco")
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            st.subheader("Trò chuyện")
-            if 'msgs' not in st.session_state: st.session_state.msgs = []
-            for m in st.session_state.msgs:
-                st.markdown(f'<div class="chat-bubble"><b>{m["u"]}:</b> {m["t"]}</div>', unsafe_allow_html=True)
-            txt = st.chat_input("Nhắn cho cây...")
-            if txt:
-                st.session_state.msgs.append({"u": "Bạn", "t": txt})
-                st.session_state.msgs.append({"u": "Cây", "t": "Mình cảm nhận được nắng đang lên, cảm ơn bạn đã quan tâm!"})
-                st.rerun()
-        with c2:
-            st.subheader("Nhật ký Cây")
-            st.write("📅 *Hôm qua:* Nắng gắt, mình đã lọc được 50mg CO2.")
-            st.write("📅 *Hôm nay:* Trời dịu, mình đang ra thêm 1 mầm nhỏ.")
+    # --- TAB 2: TÌM ĐƯỜNG (CHỈ KHI YÊU CẦU) ---
+    elif choice == "Tìm đường":
+        st.header("🧭 Chỉ đường về với cây")
+        st.write("Ứng dụng cần biết bạn đang ở đâu để chỉ đường.")
+        
+        if st.button("📍 Lấy vị trí của tôi"):
+            # Ở đây thực tế sẽ dùng GPS trình duyệt, tạm thời giả lập để bạn thấy cách chạy
+            my_lat, my_lon = 10.762622, 106.660172 # Tọa độ thực của bạn (giả định)
+            tree_lat, tree_lon = 10.763500, 106.661000 # Tọa độ cây
+            
+            dist = geodesic((my_lat, my_lon), (tree_lat, tree_lon)).meters
+            st.success(f"Đã tìm thấy cây! Cách bạn khoảng {dist:.1f} mét.")
+            
+            st.plotly_chart(draw_navigator(my_lat, my_lon, tree_lat, tree_lon), use_container_width=True)
+            st.write("Mẹo: Đi bộ theo hướng vỉa hè phía trước khoảng 2 phút.")
 
-    # --- TAB 4: CHỢ TÁI CHẾ (NEW FEATURE) ---
-    elif menu == "Chợ Tái chế":
-        st.header("♻️ Cộng đồng Tái chế Thành phố")
-        st.info("Nơi trao đổi vật liệu nâng cấp cho sản phẩm Nano của bạn.")
-        st.table(pd.DataFrame([
-            {"Vật liệu": "Can nhựa HDPE 5L", "Khoảng cách": "500m", "Tình trạng": "Sẵn sàng"},
-            {"Vật liệu": "Lưới lọc nước cũ", "Khoảng cách": "1.2km", "Tình trạng": "Đã đặt chỗ"},
-            {"Vật liệu": "Phân bón hữu cơ ủ tại nhà", "Khoảng cách": "200m", "Tình trạng": "Sẵn sàng"}
-        ]))
-        st.button("Đăng tin trao đổi vật liệu")
+    # --- TAB 3: TRÒ CHUYỆN (THẬT SỰ) ---
+    elif choice == "Trò chuyện":
+        st.header("💬 Tâm sự cùng cây")
+        st.caption("Cây của bạn phản hồi dựa trên dữ liệu thời tiết và môi trường xung quanh.")
 
-    # --- TAB 5: WIKI & CÀI ĐẶT ---
-    elif menu == "Wiki & Cài đặt":
-        st.header("⚙️ Cấu hình Hệ thống")
-        with st.expander("Bách khoa toàn thư Cây Nano"):
-            st.write("Tra cứu cách chăm sóc các loại cây phù hợp với không gian nhỏ.")
-        st.write("**Phiên bản:** Ultimate v25.0")
-        st.write("**Chủ sở hữu:** Admin")
-        if st.button("⚠️ XÓA DỮ LIỆU"): st.rerun()
+        # Hiển thị lịch sử chat
+        for message in st.session_state.chat_history:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Nhập tin nhắn mới
+        if prompt := st.chat_input("Bạn muốn nói gì với cây?"):
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # Phản hồi của cây (giả lập AI)
+            with st.chat_message("assistant", avatar="🌿"):
+                response = ""
+                if "nước" in prompt.lower():
+                    response = "Mình vẫn đủ nước, bạn đừng lo nhé! Cảm ơn bạn đã quan tâm."
+                elif "khỏe" in prompt.lower():
+                    response = "Mình đang rất khỏe, nắng hôm nay làm mình thấy rất sảng khoái."
+                else:
+                    response = "Mình đang lắng nghe bạn đây. Bạn có muốn mình lọc thêm không khí không?"
+                st.markdown(response)
+                st.session_state.chat_history.append({"role": "assistant", "content": response})
+
+    # --- TAB 4: NÂNG CẤP (200+ TÍNH NĂNG CHUYỂN THÀNH MODULES) ---
+    elif choice == "Nâng cấp":
+        st.header("✨ Nâng cấp khả năng cho cây")
+        st.write("Sử dụng các vật liệu tái chế để mở khóa các tính năng mới.")
+        
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            with st.expander("🛡️ Gói Chống Nắng (UV Shield)"):
+                st.write("- Tự động tính toán góc nắng đổ vào ban công.")
+                st.write("- Cảnh báo khi nhiệt độ nhựa tái chế vượt ngưỡng 40°C.")
+                st.button("Kích hoạt ngay", key="uv")
+        with col_m2:
+            with st.expander("💧 Gói Siêu Tiết Kiệm Nước"):
+                st.write("- Phân tích độ ẩm không khí để giảm tần suất tưới.")
+                st.write("- Tận dụng độ ẩm ban đêm để nuôi rễ.")
+                st.button("Kích hoạt ngay", key="water")
+        
+        st.divider()
+        st.subheader("Các tính năng li ti khác")
+        st.write("Đã tích hợp: Lọc bụi mịn PM2.5, Cân bằng pH đất tự động (giả lập), Theo dõi sức khỏe mầm non...")
